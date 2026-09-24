@@ -1,5 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
+const reuseCompilerPreview =
+  process.env.BENCHMARK_REUSE_COMPILER_PREVIEW === "1" && !process.env.CI;
+
 export default defineConfig({
   testDir: "./benchmark",
   testMatch: ["measure.spec.ts", "lighthouse.spec.ts"],
@@ -11,7 +14,7 @@ export default defineConfig({
     {
       command: "yarn workspace @experiment/compiler preview:profile --strictPort",
       url: "http://127.0.0.1:4173",
-      reuseExistingServer: false,
+      reuseExistingServer: reuseCompilerPreview,
       timeout: 30000,
     },
     {

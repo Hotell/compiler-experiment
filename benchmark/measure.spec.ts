@@ -378,3 +378,121 @@ test("normal-build painted table and favorite CPU at 4x slowdown", async ({ brow
   }
   writeFileSync(`${directory}/slowdown.json`, JSON.stringify({ cpuRate: 4, repetitions }, null, 2));
 });
+
+test("normal-build selection responsiveness at 4x slowdown", async ({ browser }) => {
+  test.setTimeout(180000);
+  mkdirSync(directory, { recursive: true });
+  const contexts: Awaited<ReturnType<Browser["newContext"]>>[] = [];
+  const pages = {} as Record<AppName, Page>;
+  const repetitions: Record<AppName, { domMs: number; paintMs: number }>[] = [];
+  try {
+    for (const app of apps) {
+      const context = await browser.newContext({
+        viewport: { width: 1440, height: 900 },
+      });
+      contexts.push(context);
+      const page = await context.newPage();
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+      await page.goto(productionOrigins[app]);
+      await expect(page.getByRole("row")).toHaveCount(201);
+      await page
+        .getByRole("navigation", { name: "Incident queues" })
+        .getByRole("button", { name: "Platform" })
+        .click();
+      await expect(page.getByTestId("total")).toHaveText("67");
+      await page.getByRole("button", { name: "Open INC-0001" }).click();
+      await expect(page.getByRole("dialog", { name: "Incident detail" })).toContainText("INC-0001");
+      await page.getByRole("button", { name: "Close detail" }).click();
+      await expect(page.getByRole("dialog", { name: "Incident detail" })).toContainText(
+        "No incident selected",
+      );
+      pages[app] = page;
+    }
+    for (let iteration = 0; iteration < 20; iteration++) {
+      const samples = {} as Record<AppName, { domMs: number; paintMs: number }>;
+      for (const app of [
+        ...apps.slice(iteration % apps.length),
+        ...apps.slice(0, iteration % apps.length),
+      ]) {
+        const page = pages[app];
+        await page.evaluate(() => {
+          const browserWindow = window as typeof window & {
+            __selectionTiming?: {
+              start: number;
+              domMs?: number;
+              paintMs?: number;
+            };
+          };
+          const button = document.querySelector<HTMLButtonElement>('[aria-label="Open INC-0001"]')!;
+          button.addEventListener(
+            "click",
+            () => {
+              const timing = { start: performance.now() } as {
+                start: number;
+                domMs?: number;
+                paintMs?: number;
+              };
+              browserWindow.__selectionTiming = timing;
+              const observer = new MutationObserver(() => {
+                if (
+                  !document
+                    .querySelector('[aria-label="Incident detail"]')
+                    ?.textContent?.includes("INC-0001")
+                )
+                  return;
+                observer.disconnect();
+                timing.domMs = performance.now() - timing.start;
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() => {
+                    timing.paintMs = performance.now() - timing.start;
+                  }),
+                );
+              });
+              observer.observe(document.getElementById("root")!, {
+                subtree: true,
+                childList: true,
+                characterData: true,
+              });
+            },
+            { once: true },
+          );
+        });
+        await page.getByRole("button", { name: "Open INC-0001" }).click();
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                (
+                  window as typeof window & {
+                    __selectionTiming?: { paintMs?: number };
+                  }
+                ).__selectionTiming?.paintMs,
+            ),
+          )
+          .toBeGreaterThan(0);
+        const sample = await page.evaluate(
+          () =>
+            (
+              window as typeof window & {
+                __selectionTiming: { domMs: number; paintMs: number };
+              }
+            ).__selectionTiming,
+        );
+        expect(sample.domMs).toBeGreaterThan(0);
+        samples[app] = { domMs: sample.domMs, paintMs: sample.paintMs };
+        await page.getByRole("button", { name: "Close detail" }).click();
+        await expect(page.getByRole("dialog", { name: "Incident detail" })).toContainText(
+          "No incident selected",
+        );
+      }
+      repetitions.push(samples);
+    }
+    writeFileSync(
+      `${directory}/selection-latency.json`,
+      JSON.stringify({ cpuRate: 4, repetitions }, null, 2),
+    );
+  } finally {
+    for (const context of contexts) await context.close();
+  }
+});

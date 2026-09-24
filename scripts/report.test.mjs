@@ -9,12 +9,13 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.equal(report.versions.react, "19.3.0");
   assert.match(markdown, /React 19\.3\.0 profiling fiber/);
   const tables = lexer(markdown, { gfm: true }).filter((token) => token.type === "table");
-  assert.equal(tables.length, 6, "all comparison tables must render as GFM tables");
+  assert.equal(tables.length, 7, "all comparison tables must render as GFM tables");
   for (const table of tables) {
     assert.ok(table.rows.every((row) => row.length === table.header.length));
   }
   assert.match(markdown, /## Evaluation/);
   assert.match(markdown, /## Component work and committed updates/);
+  assert.match(markdown, /## Selection responsiveness/);
   assert.match(markdown, /## User-perceived load time/);
   assert.match(markdown, /## Lighthouse/);
   assert.match(markdown, /## CPU slowdown/);
@@ -25,20 +26,17 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /Queue component work \(C \/ M \/ B\)/);
   assert.match(markdown, /JS-active sampled time/);
   assert.ok(report.evaluation?.recommendation);
-  if (
-    report.deltas.total.gzip.bytes > 0 &&
-    report.actions.compiler.find((action) => action.name === "select incident").rowRenders >
-      report.actions.manual.find((action) => action.name === "select incident").rowRenders
-  ) {
-    assert.equal(
-      report.evaluation.recommendation,
-      "Manual memoization avoids more row work and ships a smaller bundle.",
-    );
-  }
+  assert.equal(
+    report.evaluation.recommendation,
+    "No demonstrated selection-speed winner between compiler and manual; manual ships the smaller bundle.",
+  );
   for (const app of ["compiler", "manual", "baseline"]) {
     assert.ok(report.bundles[app].total.gzip > 0);
     assert.ok(report.actions[app].find((action) => action.name === "select incident"));
     assert.ok(report.load[app].medianMs > 0);
+    assert.equal(report.interactions.selection[app].runs.length, 20);
+    assert.ok(report.interactions.selection[app].medianDomMs > 0);
+    assert.ok(report.interactions.selection[app].medianPaintMs > 0);
     assert.ok(report.memory[app].beforeBytes > 0);
     assert.ok(report.memory[app].afterBytes > 0);
     assert.ok(report.lighthouse[app].performanceScore >= 0);
@@ -49,6 +47,7 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.equal(selected("compiler").rowRenders, 67);
   assert.equal(selected("manual").rowRenders, 1);
   assert.equal(selected("baseline").rowRenders, 67);
+  assert.doesNotMatch(report.evaluation.recommendation, /avoids more row work/);
   for (const [app, expected] of [
     ["compiler", 4],
     ["manual", 2],

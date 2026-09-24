@@ -36,6 +36,7 @@ const artifacts = [
   "comparison.md",
   "comparison.json",
   "slowdown.json",
+  "selection-latency.json",
   ...["compiler", "manual", "baseline"].flatMap((app) => [
     `favorite-${app}.svg`,
     `favorite-${app}.cpuprofile`,

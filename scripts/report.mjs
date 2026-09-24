@@ -5,6 +5,7 @@ import { strict as assert } from "node:assert";
 const directory = "benchmark/results";
 const input = JSON.parse(readFileSync(`${directory}/measurements.json`, "utf8"));
 const slowdown = JSON.parse(readFileSync(`${directory}/slowdown.json`, "utf8"));
+const selectionLatency = JSON.parse(readFileSync(`${directory}/selection-latency.json`, "utf8"));
 const audits = JSON.parse(readFileSync(`${directory}/lighthouse.json`, "utf8"));
 const packages = JSON.parse(readFileSync("package.json", "utf8"));
 const apps = ["compiler", "manual", "baseline"];
@@ -15,6 +16,8 @@ const median = (numbers) => {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 const round = (value, digits = 1) => Number(value.toFixed(digits));
+const p90 = (numbers) =>
+  [...numbers].sort((left, right) => left - right)[Math.ceil(numbers.length * 0.9) - 1];
 const kB = (bytes) => (bytes / 1000).toFixed(2);
 const signedKB = (bytes) => `${bytes > 0 ? "+" : ""}${kB(bytes)}`;
 const MiB = (bytes) => (bytes / 1048576).toFixed(2);
@@ -179,6 +182,7 @@ const report = {
   bundles: Object.fromEntries(apps.map((app) => [app, bundle(app)])),
   actions: {},
   load: {},
+  interactions: { selection: {} },
   memory: {},
   lighthouse: {},
   cpu: {},
@@ -226,8 +230,24 @@ for (const app of apps) {
 }
 assert.equal(slowdown.cpuRate, 4, "UPLT and CPU traces must use a 4x CPU slowdown");
 assert.equal(slowdown.repetitions.length, 3);
+assert.equal(selectionLatency.cpuRate, 4, "Selection timing must use a 4x CPU slowdown");
+assert.equal(selectionLatency.repetitions.length, 20, "Selection timing requires 20 repetitions");
 assert.equal(audits.repetitions.length, 3);
 for (const app of apps) {
+  const selectionRuns = selectionLatency.repetitions.map((repeat) => repeat[app]);
+  assert.ok(
+    selectionRuns.every((sample) => sample.domMs > 0 && sample.paintMs >= sample.domMs),
+    `${app} missing selection timing`,
+  );
+  const domTimes = selectionRuns.map((sample) => sample.domMs);
+  const paintTimes = selectionRuns.map((sample) => sample.paintMs);
+  report.interactions.selection[app] = {
+    medianDomMs: round(median(domTimes)),
+    p90DomMs: round(p90(domTimes)),
+    medianPaintMs: round(median(paintTimes)),
+    p90PaintMs: round(p90(paintTimes)),
+    runs: selectionRuns,
+  };
   const loadSamples = slowdown.repetitions.map((repeat) => repeat[app].uptlMs);
   assert.ok(loadSamples.every((value) => value > 0));
   report.load[app] = {
@@ -313,17 +333,6 @@ report.baselineDeltas = Object.fromEntries(
     ),
   ]),
 );
-const fewerUpdates = report.actions.compiler.some(
-  (action, index) =>
-    action.rowRenders < report.actions.manual[index].rowRenders ||
-    action.commits < report.actions.manual[index].commits,
-);
-const moreUpdates = report.actions.compiler.some(
-  (action, index) =>
-    action.rowRenders > report.actions.manual[index].rowRenders ||
-    action.commits > report.actions.manual[index].commits,
-);
-const largerBundle = report.deltas.total.gzip.bytes > 0;
 const selectedRows = Object.fromEntries(
   apps.map((app) => [
     app,
@@ -332,15 +341,9 @@ const selectedRows = Object.fromEntries(
 );
 report.evaluation = {
   recommendation:
-    moreUpdates && !fewerUpdates && largerBundle
-      ? "Manual memoization avoids more row work and ships a smaller bundle."
-      : !fewerUpdates && !moreUpdates && largerBundle
-        ? "Manual memoization matches compiler row work with a smaller bundle."
-        : fewerUpdates && !moreUpdates && !largerBundle
-          ? "Compiler enablement looks worthwhile for this measured workload; validate on representative production devices before rollout."
-          : "Mixed results: choose based on maintenance cost, byte budget, and repeatable real-user measurements.",
-  rationale: `Selecting an incident performs work in ${selectedRows.baseline} baseline row components, ${selectedRows.compiler} compiler row components and ${selectedRows.manual} manual row component. Compiler vs manual: ${signedKB(report.deltas.total.gzip.bytes)} kB gzip; median 4x-CPU UPLT ${report.load.compiler.medianMs} vs ${report.load.manual.medianMs} ms; Lighthouse performance ${report.lighthouse.compiler.performanceScore} vs ${report.lighthouse.manual.performanceScore}.`,
-  caveat: `Three local repetitions and simulated Lighthouse scores are diagnostic, not statistical proof or real-user evidence. Component work is inferred from internal React ${report.versions.react} profiling fiber flags, not a public API; revalidate after React upgrades. Compiler inference can reduce manual memo maintenance; its Oxc integration is experimental.`,
+    "No demonstrated selection-speed winner between compiler and manual; manual ships the smaller bundle.",
+  rationale: `With 4x CPU slowdown, median selection-to-detail DOM was ${report.interactions.selection.compiler.medianDomMs} ms (compiler) vs ${report.interactions.selection.manual.medianDomMs} ms (manual), and two-frame paint opportunity was ${report.interactions.selection.compiler.medianPaintMs} vs ${report.interactions.selection.manual.medianPaintMs} ms. Compiler vs manual bundle: ${signedKB(report.deltas.total.gzip.bytes)} kB gzip. The fiber diagnostic marks ${selectedRows.compiler} vs ${selectedRows.manual} row components during selection, but that does not quantify their cached work or establish latency.`,
+  caveat: `Twenty warmed interactions in one Chromium process and three local load/Lighthouse repetitions are advisory, not statistical proof or real-user evidence. Paint opportunity is not a guaranteed presentation timestamp. Component work uses internal React ${report.versions.react} profiling fiber flags, not a public API; revalidate after upgrades. The Oxc compiler integration is experimental.`,
 };
 writeFileSync(`${directory}/comparison.json`, JSON.stringify(report, null, 2));
 
@@ -385,6 +388,17 @@ const lines = [
     (app) =>
       `| ${app} | ${report.load[app].medianMs} | ${report.load[app].samplesMs.join(" / ")} |`,
   ),
+  "",
+  "## Selection responsiveness (normal production builds)",
+  "",
+  "Select INC-0001 from Platform after one warm-up; 20 open/close trials per app in isolated contexts with app order rotated each trial and 4x CDP CPU slowdown. Browser timing starts in the click handler and stops at the detail DOM mutation; the two-frame measurement is a paint opportunity, not a guaranteed painted frame. Playwright action latency and React profiling overhead are excluded. Differences of a few milliseconds are advisory, not CI gates; individual samples are in comparison.json.",
+  "",
+  "| App | Detail DOM median (ms) | Detail DOM p90 (ms) | Paint opportunity median (ms) | Paint opportunity p90 (ms) |",
+  "| --- | ---: | ---: | ---: | ---: |",
+  ...apps.map((app) => {
+    const timing = report.interactions.selection[app];
+    return `| ${app} | ${timing.medianDomMs} | ${timing.p90DomMs} | ${timing.medianPaintMs} | ${timing.p90PaintMs} |`;
+  }),
   "",
   "## Post-GC JS heap (normal build)",
   "",

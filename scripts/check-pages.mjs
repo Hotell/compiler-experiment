@@ -101,7 +101,7 @@ if (preview) {
         await page.getByText(report.evaluation.recommendation, { exact: true }).count(),
         1,
       );
-      assert.equal(await page.locator("article table").count(), 6);
+      assert.equal(await page.locator("article table").count(), 7);
       const reportFontSizes = await page.evaluate(() => ({
         paragraphs: [...document.querySelectorAll(".report-body p")].map((element) =>
           parseFloat(getComputedStyle(element).fontSize),
