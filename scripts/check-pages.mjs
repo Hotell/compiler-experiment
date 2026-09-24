@@ -99,11 +99,10 @@ if (preview) {
       );
       assert.equal(await page.locator("article table").count(), 6);
       assert.equal(
-        await page
-          .locator("article img")
-          .evaluateAll(
-            (images) => images.filter((image) => image.complete && image.naturalWidth > 0).length,
-          ),
+        await page.locator("article img").evaluateAll(async (images) => {
+          await Promise.all(images.map((image) => image.decode()));
+          return images.filter((image) => image.naturalWidth > 0).length;
+        }),
         3,
       );
       if (process.env.BENCHMARK_RUN_ID)
