@@ -98,6 +98,28 @@ if (preview) {
         1,
       );
       assert.equal(await page.locator("article table").count(), 6);
+      const reportFontSizes = await page.evaluate(() => ({
+        paragraphs: [...document.querySelectorAll(".report-body p")].map((element) =>
+          parseFloat(getComputedStyle(element).fontSize),
+        ),
+        tables: [...document.querySelectorAll(".report-body table")].map((element) =>
+          parseFloat(getComputedStyle(element).fontSize),
+        ),
+      }));
+      assert.ok(
+        [...reportFontSizes.paragraphs, ...reportFontSizes.tables].every((size) => size >= 16),
+        `${name} report text must be at least 16px: ${JSON.stringify(reportFontSizes)}`,
+      );
+      const tableWidths = await page.locator("article table").evaluateAll((tables) =>
+        tables.map((table) => ({
+          table: table.getBoundingClientRect().width,
+          header: table.tHead?.getBoundingClientRect().width ?? 0,
+        })),
+      );
+      assert.ok(
+        tableWidths.every(({ table, header }) => header >= table - 2),
+        `${name} table header must fill the table: ${JSON.stringify(tableWidths)}`,
+      );
       assert.equal(
         await page.locator("article img").evaluateAll(async (images) => {
           await Promise.all(images.map((image) => image.decode()));

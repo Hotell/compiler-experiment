@@ -322,7 +322,9 @@ const selectedRows = Object.fromEntries(
 report.evaluation = {
   recommendation:
     !fewerUpdates && largerBundle
-      ? "Keep manual memoization for this performance-first, already optimized app; do not enable the experimental compiler solely for speed."
+      ? !moreUpdates
+        ? "Manual memoization matches compiler update counts with a smaller bundle."
+        : "Manual memoization avoids more updates and ships a smaller bundle than the compiler."
       : fewerUpdates && !moreUpdates && !largerBundle
         ? "Compiler enablement looks worthwhile for this measured workload; validate on representative production devices before rollout."
         : "Mixed results: choose based on maintenance cost, byte budget, and repeatable real-user measurements.",

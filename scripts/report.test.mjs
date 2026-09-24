@@ -22,6 +22,19 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /Queue items \(C \/ M \/ B\)/);
   assert.match(markdown, /JS-active sampled time/);
   assert.ok(report.evaluation?.recommendation);
+  if (
+    report.deltas.total.gzip.bytes > 0 &&
+    report.actions.compiler.every(
+      (action, index) =>
+        action.rows === report.actions.manual[index].rows &&
+        action.commits === report.actions.manual[index].commits,
+    )
+  ) {
+    assert.equal(
+      report.evaluation.recommendation,
+      "Manual memoization matches compiler update counts with a smaller bundle.",
+    );
+  }
   for (const app of ["compiler", "manual", "baseline"]) {
     assert.ok(report.bundles[app].total.gzip > 0);
     assert.ok(report.actions[app].find((action) => action.name === "select incident"));

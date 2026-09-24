@@ -1,13 +1,21 @@
 .report-main {
   max-width: 1260px;
   padding-top: 34px;
+  font-size: 16px;
+}
+.report-page .brand-context,
+.report-page .source-link {
+  font-size: 16px;
+}
+.report-main .eyebrow {
+  font-size: 16px;
 }
 .report-topline {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  font-size: 12px;
+  font-size: 16px;
 }
 .report-topline a {
   color: #187768;
@@ -27,42 +35,49 @@
   margin: 48px 0 18px;
   padding-bottom: 12px;
   border-bottom: 1px solid #dce5e2;
-  font-size: 19px;
+  font-size: 22px;
 }
 .report-body h3 {
   margin: 30px 0 12px;
-  font-size: 14px;
+  font-size: 18px;
 }
 .report-body p {
   max-width: 940px;
   margin: 14px 0;
   color: #5c6b6e;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.7;
 }
 .report-body p:first-of-type {
-  font-size: 12px;
+  font-size: 16px;
   color: #849195;
 }
 .report-body h2:first-of-type + p strong {
   color: #1d6559;
-  font-size: 16px;
+  font-size: 20px;
+}
+.report-body h2:first-of-type + p {
+  padding-left: 16px;
+  border-left: 3px solid #218575;
 }
 .report-body a {
   color: #167668;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
-.report-body table {
-  display: block;
+.report-body .report-table-scroll {
   width: 100%;
   margin: 18px 0;
   overflow-x: auto;
   border: 1px solid #dce5e2;
   border-radius: 4px;
   background: #fff;
+}
+.report-body table {
+  width: 100%;
+  min-width: max-content;
   border-spacing: 0;
-  font-size: 11px;
+  font-size: 16px;
 }
 .report-body th,
 .report-body td {
@@ -88,6 +103,8 @@
   background: #f2f7f5;
   color: #4e6661;
   font-weight: 800;
+  white-space: normal;
+  line-height: 1.35;
 }
 .report-body th:first-child {
   background: #f2f7f5;
@@ -112,7 +129,10 @@
   padding: 1px 4px;
   background: #eaf2ef;
   border-radius: 2px;
-  font-size: 11px;
+  font-size: 16px;
+}
+.report-main footer {
+  font-size: 16px;
 }
 .report-main footer a {
   color: #19786b;
@@ -128,9 +148,6 @@
   }
   .report-body h2 {
     margin-top: 38px;
-  }
-  .report-body table {
-    font-size: 10px;
   }
   .report-body th,
   .report-body td {
