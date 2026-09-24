@@ -1,4 +1,38 @@
 {
   "name": "compiler-experiment",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint apps shared benchmark scripts --ignore-pattern benchmark/fixtures/**",
+    "typecheck": "yarn workspace @experiment/compiler typecheck && yarn workspace @experiment/manual typecheck",
+    "build": "yarn workspace @experiment/compiler build && yarn workspace @experiment/manual build",
+    "build:pages": "PAGES_BASE=/compiler-experiment/compiler/ yarn workspace @experiment/compiler build && PAGES_BASE=/compiler-experiment/manual/ yarn workspace @experiment/manual build && node scripts/assemble-pages.mjs",
+    "build:profile": "yarn workspace @experiment/compiler build:profile && yarn workspace @experiment/manual build:profile",
+    "benchmark": "yarn fmt:check && yarn lint && node scripts/check-guard.mjs && yarn typecheck && yarn build && node scripts/check-transform.mjs && yarn build:profile && playwright test && node scripts/report.mjs && node --test scripts/report.test.mjs",
+    "benchmark:trace": "BENCHMARK_TRACE=1 yarn benchmark"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.1.1",
+    "chrome-launcher": "1.2.1",
+    "lighthouse": "12.8.2",
+    "lucide-react": "0.577.0",
+    "oxc-transform-react": "0.145.0",
+    "oxfmt": "0.70.0",
+    "oxlint": "1.85.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "packageManager": "yarn@4.9.1"
 }

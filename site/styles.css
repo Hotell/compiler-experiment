@@ -1,0 +1,255 @@
+:root {
+  font-family: "Avenir Next", "Trebuchet MS", sans-serif;
+  color: #202b32;
+  background: #f6f8f8;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+a {
+  color: inherit;
+}
+a:focus-visible {
+  outline: 3px solid #227c6e;
+  outline-offset: 4px;
+}
+
+.site-header {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 0 clamp(20px, 4vw, 64px);
+  background: #fff;
+  border-bottom: 1px solid #e4e9e8;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 5px;
+  background: #19786b;
+  color: #fff;
+  font-size: 19px;
+  font-weight: 800;
+}
+.brand-mark span,
+.brand-name span {
+  color: #e89a64;
+}
+.brand-name {
+  font-size: 20px;
+  font-weight: 800;
+}
+.brand-divider {
+  width: 1px;
+  height: 21px;
+  margin: 0 8px;
+  background: #dce3e1;
+}
+.brand-context {
+  color: #839195;
+  font-size: 12px;
+}
+.source-link {
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.source-link:hover {
+  color: #19786b;
+}
+.source-link span {
+  margin-left: 5px;
+  font-size: 16px;
+}
+
+main {
+  max-width: 1392px;
+  margin: 0 auto;
+  padding: clamp(36px, 5vw, 74px) clamp(20px, 4vw, 64px) 28px;
+}
+.intro {
+  max-width: 650px;
+}
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #227c6e;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #39aa79;
+  box-shadow: 0 0 0 3px #e0f2e9;
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+h1 {
+  margin-top: 15px;
+  font-size: clamp(27px, 3vw, 38px);
+  font-weight: 800;
+}
+.intro p {
+  margin-top: 13px;
+  color: #728185;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.routes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 42px;
+}
+.route {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe7e5;
+  border-radius: 6px;
+  background: #fff;
+  text-decoration: none;
+  transition:
+    border-color 160ms,
+    transform 160ms,
+    box-shadow 160ms;
+}
+.route:hover,
+.route:focus-visible {
+  border-color: #5ea394;
+  box-shadow: 0 12px 30px #133e3414;
+  transform: translateY(-2px);
+}
+.preview {
+  height: clamp(200px, 24vw, 340px);
+  overflow: hidden;
+  background: #eef3f2;
+  border-bottom: 1px solid #e4e9e8;
+}
+.preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+.route-body {
+  padding: 22px 24px 24px;
+}
+.route-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+}
+.route-index {
+  color: #9ba8a9;
+}
+.route-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #227c6e;
+  white-space: nowrap;
+}
+.state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #35a77c;
+}
+.state-dot.amber {
+  background: #df9f55;
+}
+.route-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 23px;
+}
+h2 {
+  font-size: 21px;
+  font-weight: 800;
+}
+.route-bottom p {
+  margin-top: 7px;
+  color: #849195;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.route-arrow {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1px solid #dce7e3;
+  border-radius: 4px;
+  color: #247c6d;
+  font-size: 20px;
+}
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 35px;
+  padding-top: 18px;
+  border-top: 1px solid #e1e7e5;
+  color: #a0acad;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+}
+@media (max-width: 740px) {
+  .site-header {
+    height: 62px;
+  }
+  .brand-context,
+  .brand-divider {
+    display: none;
+  }
+  main {
+    padding-top: 42px;
+  }
+  .routes {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-top: 30px;
+  }
+  .preview {
+    height: clamp(185px, 52vw, 300px);
+  }
+  .route-body {
+    padding: 18px 20px 21px;
+  }
+  footer {
+    flex-wrap: wrap;
+    line-height: 1.5;
+  }
+}

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f8f8" />
+    <title>Signal / Choose an implementation</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="brand" aria-label="Signal comparison">
+        <span class="brand-mark" aria-hidden="true">S<span>.</span></span>
+        <span class="brand-name">signal<span>.</span></span>
+        <span class="brand-divider" aria-hidden="true"></span>
+        <span class="brand-context">implementation comparison</span>
+      </div>
+      <a
+        class="source-link"
+        href="https://github.com/Hotell/compiler-experiment"
+        target="_blank"
+        rel="noopener noreferrer"
+        >View source <span aria-hidden="true">↗</span></a
+      >
+    </header>
+
+    <main>
+      <div class="intro">
+        <div class="eyebrow">
+          <span class="live-dot" aria-hidden="true"></span> REACT 19 / INCIDENT OPERATIONS
+        </div>
+        <h1>Choose an implementation</h1>
+        <p>
+          One incident workspace, two optimization strategies. Open either version to explore the
+          same 200-incident workflow.
+        </p>
+      </div>
+
+      <div class="routes" aria-label="Available implementations">
+        <a class="route" href="./compiler/">
+          <div class="preview">
+            <img
+              src="./assets/compiler.jpg"
+              width="1280"
+              height="800"
+              alt="Incident triage console, React Compiler version"
+            />
+          </div>
+          <div class="route-body">
+            <div class="route-meta">
+              <span class="route-index">01 / AUTOMATIC</span
+              ><span class="route-state"
+                ><span class="state-dot" aria-hidden="true"></span> Compiler on</span
+              >
+            </div>
+            <div class="route-bottom">
+              <div>
+                <h2>React Compiler</h2>
+                <p>Oxc compiler enabled. No manual memoization hooks.</p>
+              </div>
+              <span class="route-arrow" aria-hidden="true">↗</span>
+            </div>
+          </div>
+        </a>
+        <a class="route" href="./manual/">
+          <div class="preview">
+            <img
+              src="./assets/manual.jpg"
+              width="1280"
+              height="800"
+              alt="Incident triage console, manually memoized version"
+            />
+          </div>
+          <div class="route-body">
+            <div class="route-meta">
+              <span class="route-index">02 / EXPLICIT</span
+              ><span class="route-state"
+                ><span class="state-dot amber" aria-hidden="true"></span> Compiler off</span
+              >
+            </div>
+            <div class="route-bottom">
+              <div>
+                <h2>Manual memoization</h2>
+                <p>React.memo, useMemo and useCallback where useful.</p>
+              </div>
+              <span class="route-arrow" aria-hidden="true">↗</span>
+            </div>
+          </div>
+        </a>
+      </div>
+      <footer>
+        <span>IDENTICAL DATASET · MATCHED INTERACTIONS</span
+        ><span>VITE / REACT 19 / TYPESCRIPT</span>
+      </footer>
+    </main>
+  </body>
+</html>

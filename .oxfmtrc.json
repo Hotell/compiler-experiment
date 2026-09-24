@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "tabWidth": 2,
+  "ignorePatterns": [
+    "plan.md",
+    "apps/*/dist/**",
+    "apps/*/dist-profile/**",
+    "benchmark/results/**",
+    "test-results/**",
+    "playwright-report/**"
+  ]
+}

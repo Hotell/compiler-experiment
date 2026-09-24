@@ -1,0 +1,40 @@
+name: Benchmark
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn playwright install --with-deps chromium
+      - run: yarn benchmark
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compiler-comparison
+          path: |
+            benchmark/results/comparison.json
+            benchmark/results/comparison.md
+            benchmark/results/favorite-*.svg
+            benchmark/results/favorite-*.cpuprofile
+            benchmark/results/lighthouse-*.json
+            benchmark/results/slowdown.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-diagnostics
+          path: |
+            test-results/
+            playwright-report/
+            benchmark/results/*.cpuprofile
+            benchmark/results/lighthouse-*.json
+          if-no-files-found: ignore

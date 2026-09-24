@@ -1,0 +1,41 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "jsx-a11y"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "react/immutability": "error",
+    "react/purity": "error",
+    "react/refs": "error",
+    "react/static-components": "error",
+    "react/set-state-in-effect": "error",
+    "react/set-state-in-render": "error",
+    "react/incompatible-library": "error",
+    "react/unsupported-syntax": "error",
+    "react/rules-of-hooks": "error"
+  },
+  "overrides": [
+    {
+      "files": ["apps/compiler/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "react",
+                "importNames": ["useMemo", "useCallback", "memo"],
+                "message": "Keep manual memoization in the manual app."
+              }
+            ]
+          }
+        ],
+        "no-restricted-properties": [
+          "error",
+          { "object": "React", "property": "useMemo" },
+          { "object": "React", "property": "useCallback" },
+          { "object": "React", "property": "memo" }
+        ]
+      }
+    }
+  ]
+}

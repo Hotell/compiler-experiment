@@ -15,3 +15,9 @@ node_modules
 
 #!.yarn/cache
 .pnp.*
+apps/*/dist/
+apps/*/dist-profile/
+benchmark/results/
+playwright-report/
+test-results/
+dist-pages/
