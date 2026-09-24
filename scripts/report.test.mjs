@@ -22,5 +22,19 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
     report.actions.baseline.find((action) => action.name === "select incident").rows >
       report.actions.manual.find((action) => action.name === "select incident").rows,
   );
+  assert.ok(
+    report.actions.baseline.find((action) => action.name === "select incident").openButtons >
+      report.actions.manual.find((action) => action.name === "select incident").openButtons,
+  );
+  assert.ok(
+    report.actions.baseline.find((action) => action.name === "favorite incident").openButtons >
+      report.actions.manual.find((action) => action.name === "favorite incident").openButtons,
+  );
+  for (const app of ["compiler", "manual", "baseline"]) {
+    assert.ok(
+      report.actions[app].find((action) => action.name === "favorite incident").favoriteButtons > 0,
+    );
+  }
+  assert.match(markdown, /Open buttons \| Favorite buttons/);
   assert.ok(Number.isFinite(report.baselineDeltas.compiler.total.gzip.bytes));
 });

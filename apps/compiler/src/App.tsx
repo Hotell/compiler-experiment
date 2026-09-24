@@ -207,22 +207,64 @@ function Toolbar({ incidents }: { incidents: Incident[] }) {
     </>
   );
 }
+function OpenIncidentButton({
+  id,
+  title,
+  severity,
+  onOpen,
+}: {
+  id: string;
+  title: string;
+  severity: Incident["severity"];
+  onOpen: () => void;
+}) {
+  return (
+    <Profiled id={`button:open:${id}`}>
+      <button className="row-open" onClick={onOpen} aria-label={`Open ${id}`}>
+        <span className={`severity-mark ${severity.toLowerCase()}`} />
+        <span className="incident-title">{title}</span>
+        <span className="incident-id">{id}</span>
+      </button>
+    </Profiled>
+  );
+}
+function FavoriteButton({
+  id,
+  favorite,
+  onToggle,
+}: {
+  id: string;
+  favorite: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Profiled id={`button:favorite:${id}`}>
+      <button
+        className={`favorite ${favorite ? "is-favorite" : ""}`}
+        aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${id}`}
+        aria-pressed={favorite}
+        onClick={onToggle}
+      >
+        <Star size={16} fill={favorite ? "currentColor" : "none"} />
+      </button>
+    </Profiled>
+  );
+}
 function IncidentRow({ incident, selected }: { incident: Incident; selected: boolean }) {
   const { setSelectedId } = useSelectionActions();
   const { toggleFavorite } = useIncidentActions();
+  const openIncident = () => setSelectedId(incident.id);
+  const toggleIncidentFavorite = () => toggleFavorite(incident.id);
   return (
     <Profiled id={`row:${incident.id}`}>
       <tr className={selected ? "selected" : ""}>
         <td>
-          <button
-            className="row-open"
-            onClick={() => setSelectedId(incident.id)}
-            aria-label={`Open ${incident.id}`}
-          >
-            <span className={`severity-mark ${incident.severity.toLowerCase()}`} />
-            <span className="incident-title">{incident.title}</span>
-            <span className="incident-id">{incident.id}</span>
-          </button>
+          <OpenIncidentButton
+            id={incident.id}
+            title={incident.title}
+            severity={incident.severity}
+            onOpen={openIncident}
+          />
         </td>
         <td className="service-cell">{incident.service}</td>
         <td>
@@ -239,14 +281,11 @@ function IncidentRow({ incident, selected }: { incident: Incident; selected: boo
         <td className="owner-cell">{incident.owner}</td>
         <td className="time-cell">{incident.time}</td>
         <td>
-          <button
-            className={`favorite ${incident.favorite ? "is-favorite" : ""}`}
-            aria-label={`${incident.favorite ? "Unfavorite" : "Favorite"} ${incident.id}`}
-            aria-pressed={incident.favorite}
-            onClick={() => toggleFavorite(incident.id)}
-          >
-            <Star size={16} fill={incident.favorite ? "currentColor" : "none"} />
-          </button>
+          <FavoriteButton
+            id={incident.id}
+            favorite={incident.favorite}
+            onToggle={toggleIncidentFavorite}
+          />
         </td>
       </tr>
     </Profiled>

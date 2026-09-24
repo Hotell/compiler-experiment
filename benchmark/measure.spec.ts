@@ -100,6 +100,15 @@ async function scenario(page: Page, trace: boolean) {
     .at(-1)!
     .records.filter((record) => record.id === "row:INC-0001" && record.phase !== "mount");
   expect(changed.length, "Favorite edit must produce a measured row update").toBeGreaterThan(0);
+  const favoriteButtonUpdates = actions
+    .at(-1)!
+    .records.filter(
+      (record) => record.id === "button:favorite:INC-0001" && record.phase !== "mount",
+    );
+  expect(
+    favoriteButtonUpdates.length,
+    "Favorite edit must produce a measured button update",
+  ).toBeGreaterThan(0);
   actions.push(
     await action(page, "search", async () => {
       await page.getByRole("textbox", { name: "Search incidents" }).fill("INC-0001");
@@ -171,6 +180,13 @@ test("matched incident workflows and profiling recorder", async ({ browser }) =>
         .records.filter((record) => record.id.startsWith("row:") && record.phase !== "mount")
         .length;
     expect(selectedRows("baseline")).toBeGreaterThan(selectedRows("manual"));
+    const selectedOpenButtons = (app: AppName) =>
+      results[app].actions
+        .find((entry) => entry.name === "select incident")!
+        .records.filter(
+          (record) => record.id.startsWith("button:open:") && record.phase !== "mount",
+        ).length;
+    expect(selectedOpenButtons("baseline")).toBeGreaterThan(selectedOpenButtons("manual"));
     repetitions.push(results);
   }
   let mobileState: string | undefined;

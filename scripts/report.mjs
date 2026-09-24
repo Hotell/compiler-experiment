@@ -125,6 +125,8 @@ function counts(records) {
   const updates = records.filter((record) => record.phase !== "mount");
   const byId = (id) => updates.filter((record) => record.id === id);
   const rows = updates.filter((record) => record.id.startsWith("row:"));
+  const openButtons = updates.filter((record) => record.id.startsWith("button:open:"));
+  const favoriteButtons = updates.filter((record) => record.id.startsWith("button:favorite:"));
   const durations = (entries) =>
     entries.length ? median(entries.map((entry) => entry.actualDuration)) : null;
   return {
@@ -133,6 +135,8 @@ function counts(records) {
     list: byId("list").length,
     detail: byId("detail").length,
     rows: rows.length,
+    openButtons: openButtons.length,
+    favoriteButtons: favoriteButtons.length,
     affectedRows: [...new Set(rows.map((record) => record.id.slice(4)))].sort(),
     durationMs: {
       shell: durations(byId("shell")),
@@ -173,10 +177,9 @@ for (const app of apps) {
     return {
       name: action.name,
       ...Object.fromEntries(
-        ["commits", "shell", "list", "detail", "rows"].map((key) => [
-          key,
-          median(samples.map((sample) => sample[key])),
-        ]),
+        ["commits", "shell", "list", "detail", "rows", "openButtons", "favoriteButtons"].map(
+          (key) => [key, median(samples.map((sample) => sample[key]))],
+        ),
       ),
       affectedRows: [...new Set(samples.flatMap((sample) => sample.affectedRows))].sort(),
       medianDurationMs: Object.fromEntries(
@@ -373,8 +376,8 @@ const lines = [
   ]),
   "## Committed subtree updates (median of 3 runs)",
   "",
-  "| App / action | Unique app commits | Shell | List | Detail | Rows | Affected row IDs |",
-  "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+  "| App / action | Unique app commits | Shell | List | Detail | Rows | Open buttons | Favorite buttons | Affected row IDs |",
+  "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
   ...apps.flatMap((app) =>
     report.actions[app].map((action) => {
       const ids = action.affectedRows;
@@ -382,11 +385,11 @@ const lines = [
         ids.length > 6
           ? `${ids.slice(0, 6).join(", ")} ... (${ids.length} IDs; full list in JSON)`
           : ids.join(", ") || "-";
-      return `| ${app} / ${action.name} | ${action.commits} | ${action.shell} | ${action.list} | ${action.detail} | ${action.rows} | ${displayed} |`;
+      return `| ${app} / ${action.name} | ${action.commits} | ${action.shell} | ${action.list} | ${action.detail} | ${action.rows} | ${action.openButtons} | ${action.favoriteButtons} | ${displayed} |`;
     }),
   ),
   "",
-  "Nested Profiler callbacks are grouped by commitTime for whole-app commits; subtree counts are separate and must not be added together. Mounts are excluded. Counts are committed updates, not component function calls or speculative renders. Similar counts are a valid result.",
+  "Nested Profiler callbacks are grouped by commitTime for whole-app commits; shell, row and button subtree counts are separate and must not be added together. Mounts are excluded. Counts are committed updates, not component function calls or speculative renders. Similar counts are a valid result.",
   "Median actualDuration values (ms) are advisory, include profiling overhead, and are available per action and subtree in comparison.json; never used as CI thresholds. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",
   "",
 ];
