@@ -134,6 +134,7 @@ function counts(records) {
   const updates = records.filter((record) => record.phase !== "mount");
   const byId = (id) => updates.filter((record) => record.id === id);
   const rows = updates.filter((record) => record.id.startsWith("row:"));
+  const queueItems = updates.filter((record) => record.id.startsWith("queue:"));
   const openButtons = updates.filter((record) => record.id.startsWith("button:open:"));
   const favoriteButtons = updates.filter((record) => record.id.startsWith("button:favorite:"));
   const durations = (entries) =>
@@ -144,6 +145,7 @@ function counts(records) {
     list: byId("list").length,
     detail: byId("detail").length,
     rows: rows.length,
+    queueItems: queueItems.length,
     openButtons: openButtons.length,
     favoriteButtons: favoriteButtons.length,
     affectedRows: [...new Set(rows.map((record) => record.id.slice(4)))].sort(),
@@ -187,9 +189,16 @@ for (const app of apps) {
     return {
       name: action.name,
       ...Object.fromEntries(
-        ["commits", "shell", "list", "detail", "rows", "openButtons", "favoriteButtons"].map(
-          (key) => [key, median(samples.map((sample) => sample[key]))],
-        ),
+        [
+          "commits",
+          "shell",
+          "list",
+          "detail",
+          "rows",
+          "queueItems",
+          "openButtons",
+          "favoriteButtons",
+        ].map((key) => [key, median(samples.map((sample) => sample[key]))]),
       ),
       affectedRows: [...new Set(samples.flatMap((sample) => sample.affectedRows))].sort(),
       medianDurationMs: Object.fromEntries(
@@ -421,10 +430,10 @@ const lines = [
   ]),
   "## Committed subtree updates (median of 3 runs)",
   "",
-  "C = compiler; M = manual; B = baseline. Each triplet shows committed updates for that subtree (fewer means less committed work, **not** necessarily lower latency). Rows and buttons are nested; do not add their counts. Full per-row IDs and per-run values remain in comparison.json.",
+  "C = compiler; M = manual; B = baseline. Each triplet shows committed updates for that subtree (fewer means less committed work, **not** necessarily lower latency). Queue items, rows and buttons are nested; do not add their counts. Full per-row IDs and per-run values remain in comparison.json.",
   "",
-  "| Action | Whole-app commits (C / M / B) | Rows (C / M / B) | Open buttons (C / M / B) | Favorite buttons (C / M / B) | Row comparison |",
-  "| --- | ---: | ---: | ---: | ---: | --- |",
+  "| Action | Whole-app commits (C / M / B) | Queue items (C / M / B) | Rows (C / M / B) | Open buttons (C / M / B) | Favorite buttons (C / M / B) | Row comparison |",
+  "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
   ...report.actions.compiler.map((action, index) => {
     const [compiler, manual, baseline] = apps.map((app) => report.actions[app][index]);
     assert.ok(apps.every((app) => report.actions[app][index].name === action.name));
@@ -435,8 +444,10 @@ const lines = [
           ? `C = M; ${baseline.rows - compiler.rows} fewer rows than B`
           : "Tie on row updates"
         : `${compiler.rows < manual.rows ? "C" : "M"} has fewer row updates`;
-    return `| ${action.name} | ${triplet("commits")} | ${triplet("rows")} | ${triplet("openButtons")} | ${triplet("favoriteButtons")} | ${comparison} |`;
+    return `| ${action.name} | ${triplet("commits")} | ${triplet("queueItems")} | ${triplet("rows")} | ${triplet("openButtons")} | ${triplet("favoriteButtons")} | ${comparison} |`;
   }),
+  "",
+  "On queue switch, only the previously and newly selected queue items need to update: C and M commit two queue items, while unoptimized B commits all four.",
   "",
   "Nested Profiler callbacks are grouped by commitTime for whole-app commits. Mounts, including rows reappearing after a filter reset, are excluded. Counts are committed updates, not component function calls or speculative renders. Similar counts for C and M are a valid result.",
   "Median actualDuration values (ms) are advisory, include profiling overhead, and are available per action and subtree in comparison.json; never used as CI thresholds. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",

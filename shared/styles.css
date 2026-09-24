@@ -191,12 +191,6 @@ select:focus-visible {
   height: 18px;
   flex: none;
 }
-.queue-square {
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid currentColor;
-  border-radius: 2px;
-}
 .queue-count {
   margin-left: auto;
   font-size: 11px;

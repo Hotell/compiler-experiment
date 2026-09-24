@@ -7,10 +7,19 @@ import {
   ChevronLeft,
   CircleAlert,
   Clock3,
+  CreditCard,
   Search,
+  Server,
+  ShieldCheck,
   Star,
 } from "lucide-react";
-import { queues, statuses, visibleIncidents, type Incident } from "../../../shared/incidents";
+import {
+  queues,
+  statuses,
+  visibleIncidents,
+  type Incident,
+  type Queue,
+} from "../../../shared/incidents";
 import { onRender } from "../../../benchmark/recorder";
 import {
   FilterProvider,
@@ -64,6 +73,75 @@ function Header() {
     </header>
   );
 }
+function QueueIcon({ item }: { item: Queue }) {
+  if (item === "Platform") return <Server size={16} />;
+  if (item === "Payments") return <CreditCard size={16} />;
+  if (item === "Identity") return <ShieldCheck size={16} />;
+  return <Activity size={16} />;
+}
+function QueueItem({
+  item,
+  count,
+  selected,
+  onSelect,
+}: {
+  item: Queue;
+  count: number;
+  selected: boolean;
+  onSelect: (queue: Queue) => void;
+}) {
+  const selectQueue = () => onSelect(item);
+  return (
+    <Profiled id={`queue:${item}`}>
+      <button
+        className={`queue-item ${selected ? "active" : ""}`}
+        onClick={selectQueue}
+        aria-current={selected ? "page" : undefined}
+      >
+        <span className="queue-glyph">
+          <QueueIcon item={item} />
+        </span>
+        {item}
+        <span className="queue-count">{count}</span>
+      </button>
+    </Profiled>
+  );
+}
+function QueueNavigation({
+  selectedQueue,
+  onSelect,
+}: {
+  selectedQueue: Queue;
+  onSelect: (queue: Queue) => void;
+}) {
+  return (
+    <nav aria-label="Incident queues">
+      {queues.map((item, index) => (
+        <QueueItem
+          key={item}
+          item={item}
+          count={index === 0 ? 200 : index === 3 ? 66 : 67}
+          selected={selectedQueue === item}
+          onSelect={onSelect}
+        />
+      ))}
+    </nav>
+  );
+}
+function SidebarFooter() {
+  return (
+    <div className="sidebar-footer">
+      <div className="sidebar-footer-icon">
+        <CircleAlert size={17} />
+      </div>
+      <div>
+        <strong>Operations desk</strong>
+        <small>Monitoring all systems</small>
+      </div>
+      <span className="live-dot" />
+    </div>
+  );
+}
 function Sidebar() {
   const { queue, setQueue } = useWorkspace();
   return (
@@ -72,34 +150,8 @@ function Sidebar() {
         WORKSPACE <span>01 / 04</span>
       </div>
       <div className="sidebar-heading">Queues</div>
-      <nav aria-label="Incident queues">
-        {queues.map((item, index) => (
-          <button
-            key={item}
-            className={`queue-item ${queue === item ? "active" : ""}`}
-            onClick={() => setQueue(item)}
-            aria-current={queue === item ? "page" : undefined}
-          >
-            <span className="queue-glyph">
-              {index === 0 ? <Activity size={16} /> : <span className="queue-square" />}
-            </span>
-            {item}
-            <span className="queue-count">
-              {index === 0 ? "200" : index === 1 ? "67" : index === 2 ? "67" : "66"}
-            </span>
-          </button>
-        ))}
-      </nav>
-      <div className="sidebar-footer">
-        <div className="sidebar-footer-icon">
-          <CircleAlert size={17} />
-        </div>
-        <div>
-          <strong>Operations desk</strong>
-          <small>Monitoring all systems</small>
-        </div>
-        <span className="live-dot" />
-      </div>
+      <QueueNavigation selectedQueue={queue} onSelect={setQueue} />
+      <SidebarFooter />
     </aside>
   );
 }

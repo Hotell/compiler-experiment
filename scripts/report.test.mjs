@@ -19,6 +19,7 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /raw \/ gzip \(kB\)/);
   assert.doesNotMatch(markdown, /gzip bytes/);
   assert.match(markdown, /Rows \(C \/ M \/ B\)/);
+  assert.match(markdown, /Queue items \(C \/ M \/ B\)/);
   assert.match(markdown, /JS-active sampled time/);
   assert.ok(report.evaluation?.recommendation);
   for (const app of ["compiler", "manual", "baseline"]) {
@@ -35,6 +36,16 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
     report.actions.baseline.find((action) => action.name === "select incident").rows >
       report.actions.manual.find((action) => action.name === "select incident").rows,
   );
+  for (const [app, expected] of [
+    ["compiler", 2],
+    ["manual", 2],
+    ["baseline", 4],
+  ]) {
+    assert.equal(
+      report.actions[app].find((action) => action.name === "switch queue").queueItems,
+      expected,
+    );
+  }
   assert.ok(
     report.actions.baseline.find((action) => action.name === "select incident").openButtons >
       report.actions.manual.find((action) => action.name === "select incident").openButtons,

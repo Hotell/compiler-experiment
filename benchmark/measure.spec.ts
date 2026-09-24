@@ -43,6 +43,9 @@ async function action(page: Page, name: string, change: () => Promise<void>): Pr
 async function scenario(page: Page, trace: boolean) {
   await expect(page.getByRole("heading", { name: "Incident triage" })).toBeVisible();
   await expect(page.getByRole("row")).toHaveCount(201);
+  await expect(
+    page.getByRole("navigation", { name: "Incident queues" }).locator("svg"),
+  ).toHaveCount(4);
   await expect
     .poll(() => page.evaluate(() => window.__benchmark?.records.length ?? 0))
     .toBeGreaterThan(0);
@@ -68,6 +71,9 @@ async function scenario(page: Page, trace: boolean) {
       await expect(page.getByTestId("total")).toHaveText("67");
     }),
   );
+  expect(
+    actions[1].records.some((record) => record.id.startsWith("queue:") && record.phase !== "mount"),
+  ).toBe(true);
   actions.push(
     await action(page, "select incident", async () => {
       await page.getByRole("button", { name: "Open INC-0001" }).click();
