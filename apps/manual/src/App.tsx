@@ -29,6 +29,7 @@ import {
   type Queue,
 } from "../../../shared/incidents";
 import { onRender } from "../../../benchmark/recorder";
+import { Button, Select, StatusBadge, TextInput } from "../../../shared/controls";
 import {
   FilterProvider,
   IncidentProvider,
@@ -71,9 +72,9 @@ function Header() {
         <span className="environment">
           <span className="live-dot" /> Production
         </span>
-        <button className="review-button" onClick={addReview} aria-label="Add review">
+        <Button className="review-button" onClick={addReview} aria-label="Add review">
           <Bell size={16} /> Reviews <strong data-testid="reviews">{reviews}</strong>
-        </button>
+        </Button>
         <span className="avatar" aria-label="Signed in as Alex Chen">
           AC
         </span>
@@ -100,7 +101,7 @@ const QueueItem = memo(function QueueItem({
 }) {
   const selectQueue = useCallback(() => onSelect(item), [item, onSelect]);
   return (
-    <button
+    <Button
       className={`queue-item ${selected ? "active" : ""}`}
       onClick={selectQueue}
       aria-current={selected ? "page" : undefined}
@@ -110,7 +111,7 @@ const QueueItem = memo(function QueueItem({
       </span>
       {item}
       <span className="queue-count">{count}</span>
-    </button>
+    </Button>
   );
 });
 function QueueNavigation({
@@ -226,18 +227,20 @@ function Toolbar({ incidents }: { incidents: Incident[] }) {
           <p>Manage and track your active incidents</p>
         </div>
         <div className="filters">
-          <label className="search-field">
+          <label className="search-field" htmlFor="incident-search">
             <Search size={16} />
-            <input
+            <TextInput
+              id="incident-search"
               aria-label="Search incidents"
               placeholder="Search incidents..."
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
-          <label className="select-field">
+          <label className="select-field" htmlFor="incident-status">
             <span className="sr-only">Status</span>
-            <select
+            <Select
+              id="incident-status"
               aria-label="Status"
               value={status}
               onChange={(event) => setStatus(event.target.value)}
@@ -246,12 +249,13 @@ function Toolbar({ incidents }: { incidents: Incident[] }) {
               {statuses.map((item) => (
                 <option key={item}>{item}</option>
               ))}
-            </select>
+            </Select>
           </label>
-          <label className="select-field sort-field">
+          <label className="select-field sort-field" htmlFor="incident-sort">
             <ArrowDownUp size={15} />
             <span className="sr-only">Sort</span>
-            <select
+            <Select
+              id="incident-sort"
               aria-label="Sort"
               value={sort}
               onChange={(event) => setSort(event.target.value)}
@@ -259,7 +263,7 @@ function Toolbar({ incidents }: { incidents: Incident[] }) {
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="severity">Severity</option>
-            </select>
+            </Select>
           </label>
         </div>
       </div>
@@ -278,11 +282,11 @@ const OpenIncidentButton = memo(function OpenIncidentButton({
   onOpen: () => void;
 }) {
   return (
-    <button className="row-open" onClick={onOpen} aria-label={`Open ${id}`}>
+    <Button className="row-open" onClick={onOpen} aria-label={`Open ${id}`}>
       <span className={`severity-mark ${severity.toLowerCase()}`} />
       <span className="incident-title">{title}</span>
       <span className="incident-id">{id}</span>
-    </button>
+    </Button>
   );
 });
 const FavoriteButton = memo(function FavoriteButton({
@@ -295,14 +299,14 @@ const FavoriteButton = memo(function FavoriteButton({
   onToggle: () => void;
 }) {
   return (
-    <button
+    <Button
       className={`favorite ${favorite ? "is-favorite" : ""}`}
       aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${id}`}
       aria-pressed={favorite}
       onClick={onToggle}
     >
       <Star size={16} fill={favorite ? "currentColor" : "none"} />
-    </button>
+    </Button>
   );
 });
 const IncidentRow = memo(function IncidentRow({
@@ -333,10 +337,7 @@ const IncidentRow = memo(function IncidentRow({
       </td>
       <td className="service-cell">{incident.service}</td>
       <td>
-        <span className={`status-badge ${incident.status.toLowerCase()}`}>
-          <span />
-          {incident.status}
-        </span>
+        <StatusBadge status={incident.status} />
       </td>
       <td>
         <span className={`severity-label ${incident.severity.toLowerCase()}`}>
@@ -427,25 +428,22 @@ const Detail = memo(function Detail() {
         {incident ? (
           <>
             <div className="detail-head">
-              <button className="back-button" onClick={closeDetail} aria-label="Close detail">
+              <Button className="back-button" onClick={closeDetail} aria-label="Close detail">
                 <ChevronLeft size={18} />
-              </button>
+              </Button>
               <span>INCIDENT DETAILS</span>
-              <button
+              <Button
                 className={`favorite ${incident.favorite ? "is-favorite" : ""}`}
                 aria-label={`${incident.favorite ? "Unfavorite" : "Favorite"} detail`}
                 onClick={() => toggleFavorite(incident.id)}
               >
                 <Star size={17} fill={incident.favorite ? "currentColor" : "none"} />
-              </button>
+              </Button>
             </div>
             <div className="detail-body">
               <span className="detail-id">{incident.id}</span>
               <h2>{incident.title}</h2>
-              <span className={`status-badge ${incident.status.toLowerCase()}`}>
-                <span />
-                {incident.status}
-              </span>
+              <StatusBadge status={incident.status} />
               <div className="detail-section">
                 <h3>Overview</h3>
                 <dl>
@@ -483,9 +481,9 @@ const Detail = memo(function Detail() {
                 </ul>
               </div>
               {incident.status !== "Resolved" && (
-                <button className="resolve-button" onClick={() => resolve(incident.id)}>
+                <Button className="resolve-button" onClick={() => resolve(incident.id)}>
                   <Check size={16} /> Mark resolved
-                </button>
+                </Button>
               )}
             </div>
           </>

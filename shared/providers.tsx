@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { initialIncidents, type Incident, type Queue } from "../../../shared/incidents";
+import { initialIncidents, type Incident, type Queue } from "./incidents";
 
 type WorkspaceValue = { queue: Queue; setQueue: (queue: Queue) => void };
 type IncidentValue = {

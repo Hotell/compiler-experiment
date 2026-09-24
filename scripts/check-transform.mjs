@@ -9,6 +9,18 @@ const anchors = [
   "className:`app`",
 ];
 
+for (const app of ["compiler", "baseline"]) {
+  const entry = readFileSync(`apps/${app}/src/main.tsx`, "utf8");
+  assert.match(entry, /import App from "\.\.\/\.\.\/\.\.\/shared\/App";/);
+}
+
+for (const path of ["shared/App.tsx", "apps/manual/src/App.tsx"]) {
+  const source = readFileSync(path, "utf8");
+  for (const component of ["Button", "TextInput", "Select", "StatusBadge"]) {
+    assert.match(source, new RegExp(`<${component}\\b`), `${path} missing ${component}`);
+  }
+}
+
 for (const app of ["compiler", "manual", "baseline"]) {
   const directory = `apps/${app}/dist`;
   const manifest = JSON.parse(readFileSync(`${directory}/.vite/manifest.json`, "utf8"));
