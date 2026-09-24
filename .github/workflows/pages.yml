@@ -1,13 +1,14 @@
 name: Pages
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  workflow_run:
+    workflows: [Benchmark]
+    types: [completed]
 
 permissions:
   contents: read
   pages: write
+  actions: read
 
 concurrency:
   group: pages
@@ -15,15 +16,29 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == github.event.repository.default_branch && github.event.workflow_run.head_repository.full_name == github.repository }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
           package-manager-cache: false
       - run: corepack enable
       - run: yarn install --immutable
+      - name: Download successful benchmark report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BENCHMARK_RUN_ID: ${{ github.event.workflow_run.id }}
+          BENCHMARK_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh run download "$BENCHMARK_RUN_ID" --repo "$GITHUB_REPOSITORY" --name compiler-comparison --dir benchmark/results
+          test -s benchmark/results/comparison.md
+          test -s benchmark/results/comparison.json
+          echo "BENCHMARK_RUN_ID=$BENCHMARK_RUN_ID" >> "$GITHUB_ENV"
+          echo "BENCHMARK_SHA=$BENCHMARK_SHA" >> "$GITHUB_ENV"
       - run: yarn fmt:check && yarn lint && yarn typecheck
       - run: yarn build:pages
       - run: yarn playwright install --with-deps chromium

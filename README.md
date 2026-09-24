@@ -4,7 +4,17 @@ Three standalone React 19 + Vite 8 + TypeScript incident triage consoles compare
 
 ## Hosted comparison
 
-The [chooser](https://hotell.github.io/compiler-experiment/) links to the [compiler-on](https://hotell.github.io/compiler-experiment/compiler/), [manually optimized](https://hotell.github.io/compiler-experiment/manual/), and [unoptimized baseline](https://hotell.github.io/compiler-experiment/baseline/) consoles. The `Pages` GitHub Actions workflow builds all three apps with their repository subpaths, verifies navigation and previews at desktop/mobile widths, and deploys the `dist-pages` artifact on pushes to `main` or manual dispatch. GitHub Pages must use **GitHub Actions** as its build source. Run `yarn build:pages && node scripts/check-pages.mjs` to test the same artifact locally; `dist-pages` is generated and ignored.
+The [chooser](https://hotell.github.io/compiler-experiment/) links to the [compiler-on](https://hotell.github.io/compiler-experiment/compiler/), [manually optimized](https://hotell.github.io/compiler-experiment/manual/), [unoptimized baseline](https://hotell.github.io/compiler-experiment/baseline/), and [latest successful benchmark report](https://hotell.github.io/compiler-experiment/report/) pages. On a commit/merge to the default branch, the `Benchmark` workflow runs first; **only a successful push-triggered run on that branch** starts the `Pages` workflow. Pages checks out the exact benchmarked commit, downloads that run's `compiler-comparison` artifact, and publishes the apps plus a styled report with flame charts and raw audits. A failed benchmark leaves the previous successful Pages deployment intact. GitHub Pages must use **GitHub Actions** as its build source.
+
+To preview the chooser and report locally from the repository root:
+
+```sh
+yarn benchmark      # Rebuild and measure all three apps; skip if current results already exist
+yarn build:pages    # Assemble dist-pages from those results
+yarn preview:pages  # http://127.0.0.1:4180/compiler-experiment/
+```
+
+Keep the preview command running while browsing. The local report is labeled as a preview; CI deployments link to the successful benchmark run. `node scripts/check-pages.mjs` tests the same assembled site without leaving a server running. `dist-pages` and benchmark results are generated and ignored.
 
 ## Run locally
 
