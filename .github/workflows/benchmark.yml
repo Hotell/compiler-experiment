@@ -8,15 +8,25 @@ jobs:
   compare:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
       - run: corepack enable
       - run: yarn install --immutable
       - run: yarn playwright install --with-deps chromium
       - run: yarn benchmark
-      - uses: actions/upload-artifact@v4
+      - name: Publish comparison summary
+        if: always()
+        run: |
+          if [[ -f benchmark/results/comparison.md ]]; then
+            echo "Flame charts and raw audits: [download the compiler-comparison artifact]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#artifacts). Relative links below resolve after download." >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            cat benchmark/results/comparison.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Benchmark report unavailable; see the failed steps above.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: compiler-comparison
@@ -28,7 +38,7 @@ jobs:
             benchmark/results/lighthouse-*.json
             benchmark/results/slowdown.json
           if-no-files-found: warn
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-diagnostics
