@@ -3,12 +3,18 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import type { RenderRecord } from "./recorder";
 
 const directory = "benchmark/results";
-const origins = { compiler: "http://127.0.0.1:4173", manual: "http://127.0.0.1:4174" } as const;
+const origins = {
+  compiler: "http://127.0.0.1:4173",
+  manual: "http://127.0.0.1:4174",
+  baseline: "http://127.0.0.1:4175",
+} as const;
 const productionOrigins = {
   compiler: "http://127.0.0.1:4273",
   manual: "http://127.0.0.1:4274",
+  baseline: "http://127.0.0.1:4275",
 } as const;
 type AppName = keyof typeof origins;
+const apps: AppName[] = ["compiler", "manual", "baseline"];
 type Action = { name: string; records: RenderRecord[]; state: string };
 
 async function snapshot(page: Page) {
@@ -146,21 +152,29 @@ async function run(browser: Browser, app: AppName, trace = false, screenshot = f
 test("matched incident workflows and profiling recorder", async ({ browser }) => {
   test.setTimeout(180000);
   mkdirSync(directory, { recursive: true });
-  await run(browser, "compiler", false, true);
-  await run(browser, "manual", false, true);
+  for (const app of apps) await run(browser, app, false, true);
   const repetitions = [];
   for (let repeat = 0; repeat < 3; repeat++) {
     const results = {} as Record<AppName, Awaited<ReturnType<typeof run>>>;
-    const order: AppName[] = repeat % 2 ? ["manual", "compiler"] : ["compiler", "manual"];
+    const order = [...apps.slice(repeat), ...apps.slice(0, repeat)];
     for (const app of order)
       results[app] = await run(browser, app, Boolean(process.env.BENCHMARK_TRACE) && repeat === 0);
     expect(results.compiler.actions.map((entry) => entry.state)).toEqual(
       results.manual.actions.map((entry) => entry.state),
     );
+    expect(results.compiler.actions.map((entry) => entry.state)).toEqual(
+      results.baseline.actions.map((entry) => entry.state),
+    );
+    const selectedRows = (app: AppName) =>
+      results[app].actions
+        .find((entry) => entry.name === "select incident")!
+        .records.filter((record) => record.id.startsWith("row:") && record.phase !== "mount")
+        .length;
+    expect(selectedRows("baseline")).toBeGreaterThan(selectedRows("manual"));
     repetitions.push(results);
   }
   let mobileState: string | undefined;
-  for (const app of ["compiler", "manual"] as const) {
+  for (const app of apps) {
     const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
     try {
       const page = await mobile.newPage();
@@ -196,7 +210,7 @@ test("normal-build painted table and favorite CPU at 4x slowdown", async ({ brow
   const repetitions: Record<AppName, { uptlMs: number }>[] = [];
   for (let repeat = 0; repeat < 3; repeat++) {
     const results = {} as Record<AppName, { uptlMs: number }>;
-    const order: AppName[] = repeat % 2 ? ["manual", "compiler"] : ["compiler", "manual"];
+    const order = [...apps.slice(repeat), ...apps.slice(0, repeat)];
     for (const app of order) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       try {

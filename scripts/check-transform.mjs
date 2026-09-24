@@ -9,7 +9,7 @@ const anchors = [
   "className:`app`",
 ];
 
-for (const app of ["compiler", "manual"]) {
+for (const app of ["compiler", "manual", "baseline"]) {
   const directory = `apps/${app}/dist`;
   const manifest = JSON.parse(readFileSync(`${directory}/.vite/manifest.json`, "utf8"));
   const entry = Object.values(manifest).find((chunk) => chunk.isEntry);

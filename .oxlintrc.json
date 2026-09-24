@@ -15,7 +15,7 @@
   },
   "overrides": [
     {
-      "files": ["apps/compiler/src/**"],
+      "files": ["apps/compiler/src/**", "apps/baseline/src/**"],
       "rules": {
         "no-restricted-imports": [
           "error",

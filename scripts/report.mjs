@@ -7,7 +7,7 @@ const input = JSON.parse(readFileSync(`${directory}/measurements.json`, "utf8"))
 const slowdown = JSON.parse(readFileSync(`${directory}/slowdown.json`, "utf8"));
 const audits = JSON.parse(readFileSync(`${directory}/lighthouse.json`, "utf8"));
 const packages = JSON.parse(readFileSync("package.json", "utf8"));
-const apps = ["compiler", "manual"];
+const apps = ["compiler", "manual", "baseline"];
 const median = (numbers) => {
   const sorted = [...numbers].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
@@ -246,6 +246,29 @@ report.deltas = Object.fromEntries(
     { raw: delta(kind, "raw"), gzip: delta(kind, "gzip") },
   ]),
 );
+report.baselineDeltas = Object.fromEntries(
+  ["compiler", "manual"].map((app) => [
+    app,
+    Object.fromEntries(
+      ["js", "css", "total"].map((kind) => [
+        kind,
+        Object.fromEntries(
+          ["raw", "gzip"].map((encoding) => {
+            const bytes =
+              report.bundles[app][kind][encoding] - report.bundles.baseline[kind][encoding];
+            return [
+              encoding,
+              {
+                bytes,
+                percent: round((bytes * 100) / report.bundles.baseline[kind][encoding], 2),
+              },
+            ];
+          }),
+        ),
+      ]),
+    ),
+  ]),
+);
 const fewerUpdates = report.actions.compiler.some(
   (action, index) =>
     action.rows < report.actions.manual[index].rows ||
@@ -257,6 +280,12 @@ const moreUpdates = report.actions.compiler.some(
     action.commits > report.actions.manual[index].commits,
 );
 const largerBundle = report.deltas.total.gzip.bytes > 0;
+const selectedRows = Object.fromEntries(
+  apps.map((app) => [
+    app,
+    report.actions[app].find((action) => action.name === "select incident").rows,
+  ]),
+);
 report.evaluation = {
   recommendation:
     !fewerUpdates && largerBundle
@@ -264,14 +293,14 @@ report.evaluation = {
       : fewerUpdates && !moreUpdates && !largerBundle
         ? "Compiler enablement looks worthwhile for this measured workload; validate on representative production devices before rollout."
         : "Mixed results: choose based on maintenance cost, byte budget, and repeatable real-user measurements.",
-  rationale: `Compiler vs manual: ${report.deltas.total.gzip.bytes >= 0 ? "+" : ""}${report.deltas.total.gzip.bytes} gzip bytes; median 4x-CPU UPLT ${report.load.compiler.medianMs} vs ${report.load.manual.medianMs} ms; Lighthouse performance ${report.lighthouse.compiler.performanceScore} vs ${report.lighthouse.manual.performanceScore}; ${fewerUpdates ? "some compiler actions commit fewer updates" : "no compiler action commits fewer rows or whole-app updates"}.`,
+  rationale: `Selection updates ${selectedRows.baseline} rows without optimization vs ${selectedRows.compiler} with the compiler and ${selectedRows.manual} with manual memoization. Compiler vs manual: ${report.deltas.total.gzip.bytes >= 0 ? "+" : ""}${report.deltas.total.gzip.bytes} gzip bytes; median 4x-CPU UPLT ${report.load.compiler.medianMs} vs ${report.load.manual.medianMs} ms; Lighthouse performance ${report.lighthouse.compiler.performanceScore} vs ${report.lighthouse.manual.performanceScore}; ${fewerUpdates ? "some compiler actions commit fewer updates" : "no compiler action commits fewer rows or whole-app updates"}.`,
   caveat:
     "Three local repetitions and simulated Lighthouse scores are diagnostic, not statistical proof or real-user evidence. Compiler inference can reduce manual memo maintenance; its Oxc integration is experimental.",
 };
 writeFileSync(`${directory}/comparison.json`, JSON.stringify(report, null, 2));
 
 const lines = [
-  "# React Compiler / manual memoization",
+  "# React Compiler / manual memoization / no optimization",
   "",
   `Node ${report.versions.node}; Chromium ${input.browser}; React ${report.versions.react}; Vite ${report.versions.vite}; plugin-react ${report.versions.pluginReact}; oxc-transform-react ${report.versions.oxcTransformReact}; Oxlint ${report.versions.oxlint}.`,
   "",
@@ -287,15 +316,17 @@ const lines = [
   "",
   "## Initial-load production bytes",
   "",
-  "| Asset | Compiler raw / gzip | Manual raw / gzip | Delta raw / gzip (compiler - manual) |",
-  "| --- | ---: | ---: | ---: |",
+  "| Asset | Compiler raw / gzip | Manual raw / gzip | Baseline raw / gzip | Delta raw / gzip (compiler - manual) |",
+  "| --- | ---: | ---: | ---: | ---: |",
   ...["js", "css", "total"].map(
     (kind) =>
-      `| ${kind.toUpperCase()} | ${report.bundles.compiler[kind].raw} / ${report.bundles.compiler[kind].gzip} | ${report.bundles.manual[kind].raw} / ${report.bundles.manual[kind].gzip} | ${report.deltas[kind].raw.bytes} (${report.deltas[kind].raw.percent}%) / ${report.deltas[kind].gzip.bytes} (${report.deltas[kind].gzip.percent}%) |`,
+      `| ${kind.toUpperCase()} | ${report.bundles.compiler[kind].raw} / ${report.bundles.compiler[kind].gzip} | ${report.bundles.manual[kind].raw} / ${report.bundles.manual[kind].gzip} | ${report.bundles.baseline[kind].raw} / ${report.bundles.baseline[kind].gzip} | ${report.deltas[kind].raw.bytes} (${report.deltas[kind].raw.percent}%) / ${report.deltas[kind].gzip.bytes} (${report.deltas[kind].gzip.percent}%) |`,
   ),
   "",
+  `Gzip delta vs baseline: compiler ${report.baselineDeltas.compiler.total.gzip.bytes} bytes (${report.baselineDeltas.compiler.total.gzip.percent}%); manual ${report.baselineDeltas.manual.total.gzip.bytes} bytes (${report.baselineDeltas.manual.total.gzip.percent}%).`,
+  "",
   "Manifest entry JS, static imports, and attached CSS counted once per file. Source maps, dynamic imports, and profile builds excluded.",
-  `Separately loaded chunks: compiler ${report.bundles.compiler.loadedLater.join(", ") || "none"}; manual ${report.bundles.manual.loadedLater.join(", ") || "none"}.`,
+  `Separately loaded chunks: ${apps.map((app) => `${app} ${report.bundles[app].loadedLater.join(", ") || "none"}`).join("; ")}.`,
   "",
   "## User-perceived load time (UPLT)",
   "",
@@ -310,10 +341,10 @@ const lines = [
   "",
   "## Lighthouse (mobile lab)",
   "",
-  `Lighthouse ${report.versions.lighthouse}, ${report.lighthouse.settings.formFactor} preset with ${report.lighthouse.settings.throttlingMethod} throttling, normal builds. Three fresh Chrome launches per app, alternating order. Scores are 0-100; remaining timings are milliseconds and CLS is unitless. Median metrics are advisory and do not share the 4x CDP setup above. [Compiler raw audit](lighthouse-compiler.json) / [manual raw audit](lighthouse-manual.json).`,
+  `Lighthouse ${report.versions.lighthouse}, ${report.lighthouse.settings.formFactor} preset with ${report.lighthouse.settings.throttlingMethod} throttling, normal builds. Three fresh Chrome launches per app, alternating order. Scores are 0-100; remaining timings are milliseconds and CLS is unitless. Median metrics are advisory and do not share the 4x CDP setup above. ${apps.map((app) => `[${app} raw audit](lighthouse-${app}.json)`).join(" / ")}.`,
   "",
-  "| Metric | Compiler | Manual | Delta (compiler - manual) |",
-  "| --- | ---: | ---: | ---: |",
+  "| Metric | Compiler | Manual | Baseline | Delta (compiler - manual) |",
+  "| --- | ---: | ---: | ---: | ---: |",
   ...[
     ["Performance score", "performanceScore"],
     ["Accessibility score", "accessibilityScore"],
@@ -325,7 +356,7 @@ const lines = [
     ["Time to Interactive (ms)", "interactiveMs"],
   ].map(
     ([label, key]) =>
-      `| ${label} | ${report.lighthouse.compiler[key]} | ${report.lighthouse.manual[key]} | ${round(report.lighthouse.compiler[key] - report.lighthouse.manual[key], key === "cls" ? 3 : 1)} |`,
+      `| ${label} | ${report.lighthouse.compiler[key]} | ${report.lighthouse.manual[key]} | ${report.lighthouse.baseline[key]} | ${round(report.lighthouse.compiler[key] - report.lighthouse.manual[key], key === "cls" ? 3 : 1)} |`,
   ),
   "",
   "## CPU slowdown flame charts",
@@ -345,10 +376,14 @@ const lines = [
   "| App / action | Unique app commits | Shell | List | Detail | Rows | Affected row IDs |",
   "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
   ...apps.flatMap((app) =>
-    report.actions[app].map(
-      (action) =>
-        `| ${app} / ${action.name} | ${action.commits} | ${action.shell} | ${action.list} | ${action.detail} | ${action.rows} | ${action.affectedRows.join(", ") || "-"} |`,
-    ),
+    report.actions[app].map((action) => {
+      const ids = action.affectedRows;
+      const displayed =
+        ids.length > 6
+          ? `${ids.slice(0, 6).join(", ")} ... (${ids.length} IDs; full list in JSON)`
+          : ids.join(", ") || "-";
+      return `| ${app} / ${action.name} | ${action.commits} | ${action.shell} | ${action.list} | ${action.detail} | ${action.rows} | ${displayed} |`;
+    }),
   ),
   "",
   "Nested Profiler callbacks are grouped by commitTime for whole-app commits; subtree counts are separate and must not be added together. Mounts are excluded. Counts are committed updates, not component function calls or speculative renders. Similar counts are a valid result.",

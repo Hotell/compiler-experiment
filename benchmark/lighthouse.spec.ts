@@ -4,8 +4,13 @@ import lighthouse from "lighthouse";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const directory = "benchmark/results";
-const origins = { compiler: "http://127.0.0.1:4273", manual: "http://127.0.0.1:4274" } as const;
+const origins = {
+  compiler: "http://127.0.0.1:4273",
+  manual: "http://127.0.0.1:4274",
+  baseline: "http://127.0.0.1:4275",
+} as const;
 type AppName = keyof typeof origins;
+const apps: AppName[] = ["compiler", "manual", "baseline"];
 
 test("Lighthouse mobile audits of normal production builds", async () => {
   test.setTimeout(300000);
@@ -13,7 +18,7 @@ test("Lighthouse mobile audits of normal production builds", async () => {
   const repetitions: Record<AppName, object>[] = [];
   for (let repeat = 0; repeat < 3; repeat++) {
     const results = {} as Record<AppName, object>;
-    const order: AppName[] = repeat % 2 ? ["manual", "compiler"] : ["compiler", "manual"];
+    const order = [...apps.slice(repeat), ...apps.slice(0, repeat)];
     for (const app of order) {
       const chrome = await launch({
         chromePath: chromium.executablePath(),

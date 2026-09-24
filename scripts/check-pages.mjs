@@ -28,9 +28,12 @@ const server = createServer((request, response) => {
     return;
   }
   try {
+    const content = readFileSync(path);
     response
-      .writeHead(200, { "Content-Type": types[extname(path)] ?? "application/octet-stream" })
-      .end(readFileSync(path));
+      .writeHead(200, {
+        "Content-Type": types[extname(path)] ?? "application/octet-stream",
+      })
+      .end(content);
   } catch {
     response.writeHead(404).end();
   }
@@ -48,7 +51,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height } });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    for (const app of ["compiler", "manual"]) {
+    for (const app of ["compiler", "manual", "baseline"]) {
       const home = await page.goto(base);
       assert.equal(home.status(), 200);
       assert.equal(
@@ -61,7 +64,7 @@ try {
           .evaluateAll(
             (images) => images.filter((image) => image.complete && image.naturalWidth > 0).length,
           ),
-        2,
+        3,
         "chooser previews must load",
       );
       if (app === "compiler") {
@@ -80,7 +83,7 @@ try {
     await page.close();
   }
   console.log(
-    "Pages chooser, previews and both nested apps passed desktop/mobile navigation checks.",
+    "Pages chooser, previews and all three nested apps passed desktop/mobile navigation checks.",
   );
 } finally {
   await browser.close();

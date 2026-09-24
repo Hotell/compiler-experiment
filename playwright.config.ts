@@ -21,6 +21,12 @@ export default defineConfig({
       timeout: 30000,
     },
     {
+      command: "yarn workspace @experiment/baseline preview:profile --strictPort",
+      url: "http://127.0.0.1:4175",
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+    {
       command: "yarn workspace @experiment/compiler preview:normal --strictPort",
       url: "http://127.0.0.1:4273",
       reuseExistingServer: false,
@@ -29,6 +35,12 @@ export default defineConfig({
     {
       command: "yarn workspace @experiment/manual preview:normal --strictPort",
       url: "http://127.0.0.1:4274",
+      reuseExistingServer: false,
+      timeout: 30000,
+    },
+    {
+      command: "yarn workspace @experiment/baseline preview:normal --strictPort",
+      url: "http://127.0.0.1:4275",
       reuseExistingServer: false,
       timeout: 30000,
     },
