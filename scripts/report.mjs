@@ -15,6 +15,9 @@ const median = (numbers) => {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 const round = (value, digits = 1) => Number(value.toFixed(digits));
+const kB = (bytes) => (bytes / 1000).toFixed(2);
+const signedKB = (bytes) => `${bytes > 0 ? "+" : ""}${kB(bytes)}`;
+const MiB = (bytes) => (bytes / 1048576).toFixed(2);
 
 function flameChart(app) {
   const profile = JSON.parse(readFileSync(`${directory}/favorite-${app}.cpuprofile`, "utf8"));
@@ -27,6 +30,10 @@ function flameChart(app) {
     profile.nodes.flatMap((node) => (node.children ?? []).map((child) => [child, node.id])),
   );
   const total = profile.timeDeltas.reduce((sum, delta) => sum + delta, 0);
+  const activeJS = profile.samples.reduce((sum, id, index) => {
+    const name = nodes.get(id)?.callFrame.functionName;
+    return sum + (name === "(idle)" || name === "(program)" ? 0 : profile.timeDeltas[index]);
+  }, 0);
   const rectangles = [];
   let active = [];
   let elapsed = 0;
@@ -74,6 +81,8 @@ function flameChart(app) {
   return {
     samples: profile.samples.length,
     sampledMs: round(total / 1000),
+    activeJsMs: round(activeJS / 1000),
+    activeSharePercent: round((activeJS * 100) / total),
     profile: `favorite-${app}.cpuprofile`,
     chart: `favorite-${app}.svg`,
   };
@@ -163,6 +172,7 @@ const report = {
   bundles: Object.fromEntries(apps.map((app) => [app, bundle(app)])),
   actions: {},
   load: {},
+  memory: {},
   lighthouse: {},
   cpu: {},
 };
@@ -203,6 +213,17 @@ for (const app of apps) {
   report.load[app] = {
     medianMs: round(median(loadSamples)),
     samplesMs: loadSamples.map((value) => round(value)),
+  };
+  const heapSamples = slowdown.repetitions.map((repeat) => {
+    const { heapBeforeBytes: beforeBytes, heapAfterBytes: afterBytes } = repeat[app];
+    assert.ok(beforeBytes > 0 && afterBytes > 0, `${app} missing JS heap snapshots`);
+    return { beforeBytes, afterBytes, deltaBytes: afterBytes - beforeBytes };
+  });
+  report.memory[app] = {
+    beforeBytes: median(heapSamples.map((sample) => sample.beforeBytes)),
+    afterBytes: median(heapSamples.map((sample) => sample.afterBytes)),
+    deltaBytes: median(heapSamples.map((sample) => sample.deltaBytes)),
+    runs: heapSamples,
   };
   const samples = audits.repetitions.map((repeat) => repeat[app]);
   const metrics = [
@@ -296,7 +317,7 @@ report.evaluation = {
       : fewerUpdates && !moreUpdates && !largerBundle
         ? "Compiler enablement looks worthwhile for this measured workload; validate on representative production devices before rollout."
         : "Mixed results: choose based on maintenance cost, byte budget, and repeatable real-user measurements.",
-  rationale: `Selection updates ${selectedRows.baseline} rows without optimization vs ${selectedRows.compiler} with the compiler and ${selectedRows.manual} with manual memoization. Compiler vs manual: ${report.deltas.total.gzip.bytes >= 0 ? "+" : ""}${report.deltas.total.gzip.bytes} gzip bytes; median 4x-CPU UPLT ${report.load.compiler.medianMs} vs ${report.load.manual.medianMs} ms; Lighthouse performance ${report.lighthouse.compiler.performanceScore} vs ${report.lighthouse.manual.performanceScore}; ${fewerUpdates ? "some compiler actions commit fewer updates" : "no compiler action commits fewer rows or whole-app updates"}.`,
+  rationale: `Selection updates ${selectedRows.baseline} rows without optimization vs ${selectedRows.compiler} with the compiler and ${selectedRows.manual} with manual memoization. Compiler vs manual: ${signedKB(report.deltas.total.gzip.bytes)} kB gzip; median 4x-CPU UPLT ${report.load.compiler.medianMs} vs ${report.load.manual.medianMs} ms; Lighthouse performance ${report.lighthouse.compiler.performanceScore} vs ${report.lighthouse.manual.performanceScore}; ${fewerUpdates ? "some compiler actions commit fewer updates" : "no compiler action commits fewer rows or whole-app updates"}.`,
   caveat:
     "Three local repetitions and simulated Lighthouse scores are diagnostic, not statistical proof or real-user evidence. Compiler inference can reduce manual memo maintenance; its Oxc integration is experimental.",
 };
@@ -319,14 +340,16 @@ const lines = [
   "",
   "## Initial-load production bytes",
   "",
-  "| Asset | Compiler raw / gzip | Manual raw / gzip | Baseline raw / gzip | Delta raw / gzip (compiler - manual) |",
+  "All sizes use decimal kB (1 kB = 1,000 bytes); exact bytes remain in comparison.json.",
+  "",
+  "| Asset | Compiler raw / gzip (kB) | Manual raw / gzip (kB) | Baseline raw / gzip (kB) | Delta raw / gzip (kB, compiler - manual) |",
   "| --- | ---: | ---: | ---: | ---: |",
   ...["js", "css", "total"].map(
     (kind) =>
-      `| ${kind.toUpperCase()} | ${report.bundles.compiler[kind].raw} / ${report.bundles.compiler[kind].gzip} | ${report.bundles.manual[kind].raw} / ${report.bundles.manual[kind].gzip} | ${report.bundles.baseline[kind].raw} / ${report.bundles.baseline[kind].gzip} | ${report.deltas[kind].raw.bytes} (${report.deltas[kind].raw.percent}%) / ${report.deltas[kind].gzip.bytes} (${report.deltas[kind].gzip.percent}%) |`,
+      `| ${kind.toUpperCase()} | ${kB(report.bundles.compiler[kind].raw)} / ${kB(report.bundles.compiler[kind].gzip)} | ${kB(report.bundles.manual[kind].raw)} / ${kB(report.bundles.manual[kind].gzip)} | ${kB(report.bundles.baseline[kind].raw)} / ${kB(report.bundles.baseline[kind].gzip)} | ${signedKB(report.deltas[kind].raw.bytes)} (${report.deltas[kind].raw.percent}%) / ${signedKB(report.deltas[kind].gzip.bytes)} (${report.deltas[kind].gzip.percent}%) |`,
   ),
   "",
-  `Gzip delta vs baseline: compiler ${report.baselineDeltas.compiler.total.gzip.bytes} bytes (${report.baselineDeltas.compiler.total.gzip.percent}%); manual ${report.baselineDeltas.manual.total.gzip.bytes} bytes (${report.baselineDeltas.manual.total.gzip.percent}%).`,
+  `Gzip delta vs baseline: compiler ${signedKB(report.baselineDeltas.compiler.total.gzip.bytes)} kB (${report.baselineDeltas.compiler.total.gzip.percent}%); manual ${signedKB(report.baselineDeltas.manual.total.gzip.bytes)} kB (${report.baselineDeltas.manual.total.gzip.percent}%).`,
   "",
   "Manifest entry JS, static imports, and attached CSS counted once per file. Source maps, dynamic imports, and profile builds excluded.",
   `Separately loaded chunks: ${apps.map((app) => `${app} ${report.bundles[app].loadedLater.join(", ") || "none"}`).join("; ")}.`,
@@ -340,6 +363,17 @@ const lines = [
   ...apps.map(
     (app) =>
       `| ${app} | ${report.load[app].medianMs} | ${report.load[app].samplesMs.join(" / ")} |`,
+  ),
+  "",
+  "## Post-GC JS heap (normal build)",
+  "",
+  "Fresh Chromium contexts under 4x CPU slowdown. CDP Performance.JSHeapUsedSize is sampled after forced GC once after the table is ready and again after favoriting INC-0001; GC runs outside the UPLT and CPU-profile windows. Values are medians of three paired runs. This is renderer JavaScript heap, **not** DOM/native memory, total tab memory, or a leak test. Full per-run bytes are in comparison.json.",
+  "",
+  "| App | Before favorite (MiB) | After favorite (MiB) | Median change (KiB) |",
+  "| --- | ---: | ---: | ---: |",
+  ...apps.map(
+    (app) =>
+      `| ${app} | ${MiB(report.memory[app].beforeBytes)} | ${MiB(report.memory[app].afterBytes)} | ${round(report.memory[app].deltaBytes / 1024)} |`,
   ),
   "",
   "## Lighthouse (mobile lab)",
@@ -364,7 +398,18 @@ const lines = [
   "",
   "## CPU slowdown flame charts",
   "",
-  "Normal-build favorite interaction at 4x CDP CPU slowdown; each flame chart spans its own sampled window. Horizontal width is sampled time, stack depth is vertical, and hover reveals function/source. Separate runs mean widths and colors are not directly comparable as a benchmark score. Idle/browser frames and Playwright-triggered work may be present; use the raw profiles in Chrome DevTools for investigation.",
+  "One normal-build favorite-interaction trace per app at 4x CDP CPU slowdown. JS-active sampled time excludes V8 (idle) and (program) samples; it is an approximate slice of each trace window, **not** end-to-end interaction latency or a React render count. These separate single traces include Playwright-triggered work and cannot establish a performance winner.",
+  "",
+  "| App | Sampled window (ms) | JS-active sampled time (ms) | JS-active share |",
+  "| --- | ---: | ---: | ---: |",
+  ...apps.map(
+    (app) =>
+      `| ${app} | ${report.cpu[app].sampledMs} | ${report.cpu[app].activeJsMs} | ${report.cpu[app].activeSharePercent}% |`,
+  ),
+  "",
+  `In this one capture, ${[...apps].sort((left, right) => report.cpu[left].activeJsMs - report.cpu[right].activeJsMs)[0]} had the fewest JS-active sampled milliseconds; single CPU traces are too noisy to establish a repeatable winner.`,
+  "",
+  "The flame charts below show stack depth vertically and sampled time horizontally; hover for function/source. Each chart has its own time scale. Use the raw profiles in Chrome DevTools to investigate hotspots, not to compare chart widths directly.",
   "",
   ...apps.flatMap((app) => [
     `### ${app} (${report.cpu[app].samples} samples / ${report.cpu[app].sampledMs} ms sampled)`,
@@ -376,20 +421,24 @@ const lines = [
   ]),
   "## Committed subtree updates (median of 3 runs)",
   "",
-  "| App / action | Unique app commits | Shell | List | Detail | Rows | Open buttons | Favorite buttons | Affected row IDs |",
-  "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
-  ...apps.flatMap((app) =>
-    report.actions[app].map((action) => {
-      const ids = action.affectedRows;
-      const displayed =
-        ids.length > 6
-          ? `${ids.slice(0, 6).join(", ")} ... (${ids.length} IDs; full list in JSON)`
-          : ids.join(", ") || "-";
-      return `| ${app} / ${action.name} | ${action.commits} | ${action.shell} | ${action.list} | ${action.detail} | ${action.rows} | ${action.openButtons} | ${action.favoriteButtons} | ${displayed} |`;
-    }),
-  ),
+  "C = compiler; M = manual; B = baseline. Each triplet shows committed updates for that subtree (fewer means less committed work, **not** necessarily lower latency). Rows and buttons are nested; do not add their counts. Full per-row IDs and per-run values remain in comparison.json.",
   "",
-  "Nested Profiler callbacks are grouped by commitTime for whole-app commits; shell, row and button subtree counts are separate and must not be added together. Mounts are excluded. Counts are committed updates, not component function calls or speculative renders. Similar counts are a valid result.",
+  "| Action | Whole-app commits (C / M / B) | Rows (C / M / B) | Open buttons (C / M / B) | Favorite buttons (C / M / B) | Row comparison |",
+  "| --- | ---: | ---: | ---: | ---: | --- |",
+  ...report.actions.compiler.map((action, index) => {
+    const [compiler, manual, baseline] = apps.map((app) => report.actions[app][index]);
+    assert.ok(apps.every((app) => report.actions[app][index].name === action.name));
+    const triplet = (key) => `${compiler[key]} / ${manual[key]} / ${baseline[key]}`;
+    const comparison =
+      compiler.rows === manual.rows
+        ? baseline.rows > compiler.rows
+          ? `C = M; ${baseline.rows - compiler.rows} fewer rows than B`
+          : "Tie on row updates"
+        : `${compiler.rows < manual.rows ? "C" : "M"} has fewer row updates`;
+    return `| ${action.name} | ${triplet("commits")} | ${triplet("rows")} | ${triplet("openButtons")} | ${triplet("favoriteButtons")} | ${comparison} |`;
+  }),
+  "",
+  "Nested Profiler callbacks are grouped by commitTime for whole-app commits. Mounts, including rows reappearing after a filter reset, are excluded. Counts are committed updates, not component function calls or speculative renders. Similar counts for C and M are a valid result.",
   "Median actualDuration values (ms) are advisory, include profiling overhead, and are available per action and subtree in comparison.json; never used as CI thresholds. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",
   "",
 ];

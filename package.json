@@ -23,6 +23,7 @@
     "chrome-launcher": "1.2.1",
     "lighthouse": "12.8.2",
     "lucide-react": "0.577.0",
+    "marked": "18.0.14",
     "oxc-transform-react": "0.145.0",
     "oxfmt": "0.70.0",
     "oxlint": "1.85.0",

@@ -223,9 +223,14 @@ test("matched incident workflows and profiling recorder", async ({ browser }) =>
 test("normal-build painted table and favorite CPU at 4x slowdown", async ({ browser }) => {
   test.setTimeout(120000);
   mkdirSync(directory, { recursive: true });
-  const repetitions: Record<AppName, { uptlMs: number }>[] = [];
+  type LoadSample = {
+    uptlMs: number;
+    heapBeforeBytes: number;
+    heapAfterBytes: number;
+  };
+  const repetitions: Record<AppName, LoadSample>[] = [];
   for (let repeat = 0; repeat < 3; repeat++) {
-    const results = {} as Record<AppName, { uptlMs: number }>;
+    const results = {} as Record<AppName, LoadSample>;
     const order = [...apps.slice(repeat), ...apps.slice(0, repeat)];
     for (const app of order) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -256,7 +261,15 @@ test("normal-build painted table and favorite CPU at 4x slowdown", async ({ brow
         );
         expect(uptlMs).toBeGreaterThan(0);
         await expect(page.getByRole("row")).toHaveCount(201);
-        results[app] = { uptlMs };
+        await cdp.send("Performance.enable");
+        async function retainedHeapBytes() {
+          await cdp.send("HeapProfiler.collectGarbage");
+          const { metrics } = await cdp.send("Performance.getMetrics");
+          const bytes = metrics.find((metric) => metric.name === "JSHeapUsedSize")?.value;
+          expect(bytes).toBeGreaterThan(0);
+          return bytes!;
+        }
+        const heapBeforeBytes = await retainedHeapBytes();
         if (repeat === 0) {
           await cdp.send("Profiler.enable");
           await cdp.send("Profiler.setSamplingInterval", { interval: 100 });
@@ -271,6 +284,8 @@ test("normal-build painted table and favorite CPU at 4x slowdown", async ({ brow
           expect(profile.samples?.length).toBeGreaterThan(0);
           writeFileSync(`${directory}/favorite-${app}.cpuprofile`, JSON.stringify(profile));
         }
+        const heapAfterBytes = await retainedHeapBytes();
+        results[app] = { uptlMs, heapBeforeBytes, heapAfterBytes };
         await cdp.detach();
       } finally {
         await context.close();
