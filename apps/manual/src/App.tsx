@@ -100,19 +100,17 @@ const QueueItem = memo(function QueueItem({
 }) {
   const selectQueue = useCallback(() => onSelect(item), [item, onSelect]);
   return (
-    <Profiled id={`queue:${item}`}>
-      <button
-        className={`queue-item ${selected ? "active" : ""}`}
-        onClick={selectQueue}
-        aria-current={selected ? "page" : undefined}
-      >
-        <span className="queue-glyph">
-          <QueueIcon item={item} />
-        </span>
-        {item}
-        <span className="queue-count">{count}</span>
-      </button>
-    </Profiled>
+    <button
+      className={`queue-item ${selected ? "active" : ""}`}
+      onClick={selectQueue}
+      aria-current={selected ? "page" : undefined}
+    >
+      <span className="queue-glyph">
+        <QueueIcon item={item} />
+      </span>
+      {item}
+      <span className="queue-count">{count}</span>
+    </button>
   );
 });
 function QueueNavigation({
@@ -125,13 +123,14 @@ function QueueNavigation({
   return (
     <nav aria-label="Incident queues">
       {queues.map((item, index) => (
-        <QueueItem
-          key={item}
-          item={item}
-          count={index === 0 ? 200 : index === 3 ? 66 : 67}
-          selected={selectedQueue === item}
-          onSelect={onSelect}
-        />
+        <Profiled key={item} id={`queue:${item}`}>
+          <QueueItem
+            item={item}
+            count={index === 0 ? 200 : index === 3 ? 66 : 67}
+            selected={selectedQueue === item}
+            onSelect={onSelect}
+          />
+        </Profiled>
       ))}
     </nav>
   );
@@ -279,13 +278,11 @@ const OpenIncidentButton = memo(function OpenIncidentButton({
   onOpen: () => void;
 }) {
   return (
-    <Profiled id={`button:open:${id}`}>
-      <button className="row-open" onClick={onOpen} aria-label={`Open ${id}`}>
-        <span className={`severity-mark ${severity.toLowerCase()}`} />
-        <span className="incident-title">{title}</span>
-        <span className="incident-id">{id}</span>
-      </button>
-    </Profiled>
+    <button className="row-open" onClick={onOpen} aria-label={`Open ${id}`}>
+      <span className={`severity-mark ${severity.toLowerCase()}`} />
+      <span className="incident-title">{title}</span>
+      <span className="incident-id">{id}</span>
+    </button>
   );
 });
 const FavoriteButton = memo(function FavoriteButton({
@@ -298,16 +295,14 @@ const FavoriteButton = memo(function FavoriteButton({
   onToggle: () => void;
 }) {
   return (
-    <Profiled id={`button:favorite:${id}`}>
-      <button
-        className={`favorite ${favorite ? "is-favorite" : ""}`}
-        aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${id}`}
-        aria-pressed={favorite}
-        onClick={onToggle}
-      >
-        <Star size={16} fill={favorite ? "currentColor" : "none"} />
-      </button>
-    </Profiled>
+    <button
+      className={`favorite ${favorite ? "is-favorite" : ""}`}
+      aria-label={`${favorite ? "Unfavorite" : "Favorite"} ${id}`}
+      aria-pressed={favorite}
+      onClick={onToggle}
+    >
+      <Star size={16} fill={favorite ? "currentColor" : "none"} />
+    </button>
   );
 });
 const IncidentRow = memo(function IncidentRow({
@@ -325,39 +320,41 @@ const IncidentRow = memo(function IncidentRow({
     [incident.id, toggleFavorite],
   );
   return (
-    <Profiled id={`row:${incident.id}`}>
-      <tr className={selected ? "selected" : ""}>
-        <td>
+    <tr className={selected ? "selected" : ""}>
+      <td>
+        <Profiled id={`button:open:${incident.id}`}>
           <OpenIncidentButton
             id={incident.id}
             title={incident.title}
             severity={incident.severity}
             onOpen={openIncident}
           />
-        </td>
-        <td className="service-cell">{incident.service}</td>
-        <td>
-          <span className={`status-badge ${incident.status.toLowerCase()}`}>
-            <span />
-            {incident.status}
-          </span>
-        </td>
-        <td>
-          <span className={`severity-label ${incident.severity.toLowerCase()}`}>
-            {incident.severity}
-          </span>
-        </td>
-        <td className="owner-cell">{incident.owner}</td>
-        <td className="time-cell">{incident.time}</td>
-        <td>
+        </Profiled>
+      </td>
+      <td className="service-cell">{incident.service}</td>
+      <td>
+        <span className={`status-badge ${incident.status.toLowerCase()}`}>
+          <span />
+          {incident.status}
+        </span>
+      </td>
+      <td>
+        <span className={`severity-label ${incident.severity.toLowerCase()}`}>
+          {incident.severity}
+        </span>
+      </td>
+      <td className="owner-cell">{incident.owner}</td>
+      <td className="time-cell">{incident.time}</td>
+      <td>
+        <Profiled id={`button:favorite:${incident.id}`}>
           <FavoriteButton
             id={incident.id}
             favorite={incident.favorite}
             onToggle={toggleIncidentFavorite}
           />
-        </td>
-      </tr>
-    </Profiled>
+        </Profiled>
+      </td>
+    </tr>
   );
 });
 function IncidentList({ incidents }: { incidents: Incident[] }) {
@@ -381,11 +378,9 @@ function IncidentList({ incidents }: { incidents: Incident[] }) {
           </thead>
           <tbody>
             {incidents.map((incident) => (
-              <IncidentRow
-                key={incident.id}
-                incident={incident}
-                selected={selectedId === incident.id}
-              />
+              <Profiled key={incident.id} id={`row:${incident.id}`}>
+                <IncidentRow incident={incident} selected={selectedId === incident.id} />
+              </Profiled>
             ))}
           </tbody>
         </table>

@@ -6,33 +6,33 @@ import { lexer } from "marked";
 test("comparison explains load, Lighthouse, CPU traces and the decision", () => {
   const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
   const markdown = readFileSync("benchmark/results/comparison.md", "utf8");
+  assert.equal(report.versions.react, "19.3.0");
+  assert.match(markdown, /React 19\.3\.0 profiling fiber/);
   const tables = lexer(markdown, { gfm: true }).filter((token) => token.type === "table");
   assert.equal(tables.length, 6, "all comparison tables must render as GFM tables");
   for (const table of tables) {
     assert.ok(table.rows.every((row) => row.length === table.header.length));
   }
   assert.match(markdown, /## Evaluation/);
+  assert.match(markdown, /## Component work and committed updates/);
   assert.match(markdown, /## User-perceived load time/);
   assert.match(markdown, /## Lighthouse/);
   assert.match(markdown, /## CPU slowdown/);
   assert.match(markdown, /## Post-GC JS heap/);
   assert.match(markdown, /raw \/ gzip \(kB\)/);
   assert.doesNotMatch(markdown, /gzip bytes/);
-  assert.match(markdown, /Rows \(C \/ M \/ B\)/);
-  assert.match(markdown, /Queue items \(C \/ M \/ B\)/);
+  assert.match(markdown, /Row component work \(C \/ M \/ B\)/);
+  assert.match(markdown, /Queue component work \(C \/ M \/ B\)/);
   assert.match(markdown, /JS-active sampled time/);
   assert.ok(report.evaluation?.recommendation);
   if (
     report.deltas.total.gzip.bytes > 0 &&
-    report.actions.compiler.every(
-      (action, index) =>
-        action.rows === report.actions.manual[index].rows &&
-        action.commits === report.actions.manual[index].commits,
-    )
+    report.actions.compiler.find((action) => action.name === "select incident").rowRenders >
+      report.actions.manual.find((action) => action.name === "select incident").rowRenders
   ) {
     assert.equal(
       report.evaluation.recommendation,
-      "Manual memoization matches compiler update counts with a smaller bundle.",
+      "Manual memoization avoids more row work and ships a smaller bundle.",
     );
   }
   for (const app of ["compiler", "manual", "baseline"]) {
@@ -45,33 +45,32 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
     assert.match(markdown, new RegExp(`!\\[${app} CPU flame chart\\]`));
     assert.ok(existsSync(`benchmark/results/favorite-${app}.svg`));
   }
-  assert.ok(
-    report.actions.baseline.find((action) => action.name === "select incident").rows >
-      report.actions.manual.find((action) => action.name === "select incident").rows,
-  );
+  const selected = (app) => report.actions[app].find((action) => action.name === "select incident");
+  assert.equal(selected("compiler").rowRenders, 67);
+  assert.equal(selected("manual").rowRenders, 1);
+  assert.equal(selected("baseline").rowRenders, 67);
   for (const [app, expected] of [
-    ["compiler", 2],
+    ["compiler", 4],
     ["manual", 2],
     ["baseline", 4],
   ]) {
     assert.equal(
-      report.actions[app].find((action) => action.name === "switch queue").queueItems,
+      report.actions[app].find((action) => action.name === "switch queue").queueRenders,
       expected,
     );
   }
+  assert.ok(selected("baseline").openButtonRenders > selected("manual").openButtonRenders);
   assert.ok(
-    report.actions.baseline.find((action) => action.name === "select incident").openButtons >
-      report.actions.manual.find((action) => action.name === "select incident").openButtons,
-  );
-  assert.ok(
-    report.actions.baseline.find((action) => action.name === "favorite incident").openButtons >
-      report.actions.manual.find((action) => action.name === "favorite incident").openButtons,
+    report.actions.baseline.find((action) => action.name === "favorite incident")
+      .openButtonRenders >
+      report.actions.manual.find((action) => action.name === "favorite incident").openButtonRenders,
   );
   for (const app of ["compiler", "manual", "baseline"]) {
     assert.ok(
-      report.actions[app].find((action) => action.name === "favorite incident").favoriteButtons > 0,
+      report.actions[app].find((action) => action.name === "favorite incident")
+        .favoriteButtonRenders > 0,
     );
   }
-  assert.match(markdown, /Open buttons \(C \/ M \/ B\) \| Favorite buttons/);
+  assert.match(markdown, /Open button work \(C \/ M \/ B\) \| Favorite button work/);
   assert.ok(Number.isFinite(report.baselineDeltas.compiler.total.gzip.bytes));
 });

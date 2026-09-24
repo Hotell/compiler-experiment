@@ -130,7 +130,8 @@ function bundle(app) {
   };
 }
 
-function counts(records) {
+function counts(records, fiberRenders) {
+  assert.ok(Array.isArray(fiberRenders), "Missing React fiber component-work records");
   const updates = records.filter((record) => record.phase !== "mount");
   const byId = (id) => updates.filter((record) => record.id === id);
   const rows = updates.filter((record) => record.id.startsWith("row:"));
@@ -145,6 +146,10 @@ function counts(records) {
     list: byId("list").length,
     detail: byId("detail").length,
     rows: rows.length,
+    rowRenders: fiberRenders.filter((id) => id.startsWith("row:")).length,
+    queueRenders: fiberRenders.filter((id) => id.startsWith("queue:")).length,
+    openButtonRenders: fiberRenders.filter((id) => id.startsWith("button:open:")).length,
+    favoriteButtonRenders: fiberRenders.filter((id) => id.startsWith("button:favorite:")).length,
     queueItems: queueItems.length,
     openButtons: openButtons.length,
     favoriteButtons: favoriteButtons.length,
@@ -185,7 +190,9 @@ for (const app of apps) {
     `${app} recorder did not capture mounts`,
   );
   report.actions[app] = runs[0].actions.map((action, index) => {
-    const samples = runs.map((run) => counts(run.actions[index].records));
+    const samples = runs.map((run) =>
+      counts(run.actions[index].records, run.actions[index].fiberRenders),
+    );
     return {
       name: action.name,
       ...Object.fromEntries(
@@ -195,6 +202,10 @@ for (const app of apps) {
           "list",
           "detail",
           "rows",
+          "rowRenders",
+          "queueRenders",
+          "openButtonRenders",
+          "favoriteButtonRenders",
           "queueItems",
           "openButtons",
           "favoriteButtons",
@@ -304,33 +315,32 @@ report.baselineDeltas = Object.fromEntries(
 );
 const fewerUpdates = report.actions.compiler.some(
   (action, index) =>
-    action.rows < report.actions.manual[index].rows ||
+    action.rowRenders < report.actions.manual[index].rowRenders ||
     action.commits < report.actions.manual[index].commits,
 );
 const moreUpdates = report.actions.compiler.some(
   (action, index) =>
-    action.rows > report.actions.manual[index].rows ||
+    action.rowRenders > report.actions.manual[index].rowRenders ||
     action.commits > report.actions.manual[index].commits,
 );
 const largerBundle = report.deltas.total.gzip.bytes > 0;
 const selectedRows = Object.fromEntries(
   apps.map((app) => [
     app,
-    report.actions[app].find((action) => action.name === "select incident").rows,
+    report.actions[app].find((action) => action.name === "select incident").rowRenders,
   ]),
 );
 report.evaluation = {
   recommendation:
-    !fewerUpdates && largerBundle
-      ? !moreUpdates
-        ? "Manual memoization matches compiler update counts with a smaller bundle."
-        : "Manual memoization avoids more updates and ships a smaller bundle than the compiler."
-      : fewerUpdates && !moreUpdates && !largerBundle
-        ? "Compiler enablement looks worthwhile for this measured workload; validate on representative production devices before rollout."
-        : "Mixed results: choose based on maintenance cost, byte budget, and repeatable real-user measurements.",
-  rationale: `Selection updates ${selectedRows.baseline} rows without optimization vs ${selectedRows.compiler} with the compiler and ${selectedRows.manual} with manual memoization. Compiler vs manual: ${signedKB(report.deltas.total.gzip.bytes)} kB gzip; median 4x-CPU UPLT ${report.load.compiler.medianMs} vs ${report.load.manual.medianMs} ms; Lighthouse performance ${report.lighthouse.compiler.performanceScore} vs ${report.lighthouse.manual.performanceScore}; ${fewerUpdates ? "some compiler actions commit fewer updates" : "no compiler action commits fewer rows or whole-app updates"}.`,
-  caveat:
-    "Three local repetitions and simulated Lighthouse scores are diagnostic, not statistical proof or real-user evidence. Compiler inference can reduce manual memo maintenance; its Oxc integration is experimental.",
+    moreUpdates && !fewerUpdates && largerBundle
+      ? "Manual memoization avoids more row work and ships a smaller bundle."
+      : !fewerUpdates && !moreUpdates && largerBundle
+        ? "Manual memoization matches compiler row work with a smaller bundle."
+        : fewerUpdates && !moreUpdates && !largerBundle
+          ? "Compiler enablement looks worthwhile for this measured workload; validate on representative production devices before rollout."
+          : "Mixed results: choose based on maintenance cost, byte budget, and repeatable real-user measurements.",
+  rationale: `Selecting an incident performs work in ${selectedRows.baseline} baseline row components, ${selectedRows.compiler} compiler row components and ${selectedRows.manual} manual row component. Compiler vs manual: ${signedKB(report.deltas.total.gzip.bytes)} kB gzip; median 4x-CPU UPLT ${report.load.compiler.medianMs} vs ${report.load.manual.medianMs} ms; Lighthouse performance ${report.lighthouse.compiler.performanceScore} vs ${report.lighthouse.manual.performanceScore}.`,
+  caveat: `Three local repetitions and simulated Lighthouse scores are diagnostic, not statistical proof or real-user evidence. Component work is inferred from internal React ${report.versions.react} profiling fiber flags, not a public API; revalidate after React upgrades. Compiler inference can reduce manual memo maintenance; its Oxc integration is experimental.`,
 };
 writeFileSync(`${directory}/comparison.json`, JSON.stringify(report, null, 2));
 
@@ -430,28 +440,28 @@ const lines = [
     `[Open raw ${app} CPU profile](${report.cpu[app].profile})`,
     "",
   ]),
-  "## Committed subtree updates (median of 3 runs)",
+  "## Component work and committed updates (median of 3 runs)",
   "",
-  "C = compiler; M = manual; B = baseline. Each triplet shows committed updates for that subtree (fewer means less committed work, **not** necessarily lower latency). Queue items, rows and buttons are nested; do not add their counts. Full per-row IDs and per-run values remain in comparison.json.",
+  `C = compiler; M = manual; B = baseline. Row/queue/button columns count mounted-already components whose React ${report.versions.react} profiling fiber has the PerformedWork flag in a commit (a version-specific DevTools-like diagnostic). Only the whole-app commits column comes from React \`<Profiler>\` callbacks. Nested Profiler subtree callback counts remain separately in comparison.json: a callback does **not** prove its wrapped component function ran. Fewer component-work entries mean less render work, **not** necessarily lower latency. These are not additive counts or an API guaranteed across React releases.`,
   "",
-  "| Action | Whole-app commits (C / M / B) | Queue items (C / M / B) | Rows (C / M / B) | Open buttons (C / M / B) | Favorite buttons (C / M / B) | Row comparison |",
+  "| Action | Whole-app commits (C / M / B) | Queue component work (C / M / B) | Row component work (C / M / B) | Open button work (C / M / B) | Favorite button work (C / M / B) | Row comparison |",
   "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
   ...report.actions.compiler.map((action, index) => {
     const [compiler, manual, baseline] = apps.map((app) => report.actions[app][index]);
     assert.ok(apps.every((app) => report.actions[app][index].name === action.name));
     const triplet = (key) => `${compiler[key]} / ${manual[key]} / ${baseline[key]}`;
     const comparison =
-      compiler.rows === manual.rows
-        ? baseline.rows > compiler.rows
-          ? `C = M; ${baseline.rows - compiler.rows} fewer rows than B`
-          : "Tie on row updates"
-        : `${compiler.rows < manual.rows ? "C" : "M"} has fewer row updates`;
-    return `| ${action.name} | ${triplet("commits")} | ${triplet("queueItems")} | ${triplet("rows")} | ${triplet("openButtons")} | ${triplet("favoriteButtons")} | ${comparison} |`;
+      compiler.rowRenders === manual.rowRenders
+        ? baseline.rowRenders > compiler.rowRenders
+          ? `C = M; ${baseline.rowRenders - compiler.rowRenders} fewer rows than B`
+          : "Tie on row work"
+        : `${compiler.rowRenders < manual.rowRenders ? "C" : "M"} does less row work`;
+    return `| ${action.name} | ${triplet("commits")} | ${triplet("queueRenders")} | ${triplet("rowRenders")} | ${triplet("openButtonRenders")} | ${triplet("favoriteButtonRenders")} | ${comparison} |`;
   }),
   "",
-  "On queue switch, only the previously and newly selected queue items need to update: C and M commit two queue items, while unoptimized B commits all four.",
+  "On queue switch, only the previously and newly selected queue items need to do work; the fiber diagnostic shows whether other queue item components also ran.",
   "",
-  "Nested Profiler callbacks are grouped by commitTime for whole-app commits. Mounts, including rows reappearing after a filter reset, are excluded. Counts are committed updates, not component function calls or speculative renders. Similar counts for C and M are a valid result.",
+  `Whole-app commits group nested React \`<Profiler>\` callbacks by commitTime. Component-work counts instead use React ${report.versions.react}'s internal PerformedWork fiber flag and exclude mounts, including rows reappearing after a filter reset. They can differ from subtree callback counts; neither measure captures aborted renders or guarantees user-visible speedups.`,
   "Median actualDuration values (ms) are advisory, include profiling overhead, and are available per action and subtree in comparison.json; never used as CI thresholds. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",
   "",
 ];

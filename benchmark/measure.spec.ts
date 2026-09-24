@@ -15,7 +15,63 @@ const productionOrigins = {
 } as const;
 type AppName = keyof typeof origins;
 const apps: AppName[] = ["compiler", "manual", "baseline"];
-type Action = { name: string; records: RenderRecord[]; state: string };
+type Action = {
+  name: string;
+  records: RenderRecord[];
+  fiberRenders: string[];
+  state: string;
+};
+
+type FiberNode = {
+  tag: number;
+  flags: number;
+  alternate: FiberNode | null;
+  child: FiberNode | null;
+  sibling: FiberNode | null;
+  memoizedProps: { id?: string } | null;
+};
+
+async function installFiberRecorder(page: Page) {
+  await page.addInitScript(() => {
+    let rendererId = 0;
+    const recorder = {
+      records: [] as string[],
+      rendererCount: 0,
+      clear() {
+        this.records = [];
+      },
+    };
+    const browserWindow = window as typeof window & {
+      __fiberBenchmark: typeof recorder;
+      __REACT_DEVTOOLS_GLOBAL_HOOK__: object;
+    };
+    browserWindow.__fiberBenchmark = recorder;
+    browserWindow.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+      supportsFiber: true,
+      inject() {
+        recorder.rendererCount++;
+        return ++rendererId;
+      },
+      onCommitFiberRoot(_id: number, root: { current: FiberNode }) {
+        function visit(fiber: FiberNode | null) {
+          for (let node = fiber; node; node = node.sibling) {
+            const id = node.tag === 12 ? node.memoizedProps?.id : undefined;
+            if (
+              id &&
+              /^(row:|queue:|button:)/.test(id) &&
+              node.child?.alternate &&
+              node.child.flags & 1
+            ) {
+              recorder.records.push(id);
+            }
+            visit(node.child);
+          }
+        }
+        visit(root.current.child);
+      },
+    };
+  });
+}
 
 async function snapshot(page: Page) {
   return JSON.stringify({
@@ -27,7 +83,12 @@ async function snapshot(page: Page) {
 }
 
 async function action(page: Page, name: string, change: () => Promise<void>): Promise<Action> {
-  await page.evaluate(() => window.__benchmark!.clear());
+  await page.evaluate(() => {
+    window.__benchmark!.clear();
+    (
+      window as typeof window & { __fiberBenchmark: { clear: () => void } }
+    ).__fiberBenchmark.clear();
+  });
   await change();
   await expect
     .poll(() =>
@@ -37,7 +98,12 @@ async function action(page: Page, name: string, change: () => Promise<void>): Pr
     )
     .toBeGreaterThan(0);
   const records = await page.evaluate(() => window.__benchmark!.records);
-  return { name, records, state: await snapshot(page) };
+  const fiberRenders = await page.evaluate(
+    () =>
+      (window as typeof window & { __fiberBenchmark: { records: string[] } }).__fiberBenchmark
+        .records,
+  );
+  return { name, records, fiberRenders, state: await snapshot(page) };
 }
 
 async function scenario(page: Page, trace: boolean) {
@@ -49,6 +115,16 @@ async function scenario(page: Page, trace: boolean) {
   await expect
     .poll(() => page.evaluate(() => window.__benchmark?.records.length ?? 0))
     .toBeGreaterThan(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as typeof window & {
+            __fiberBenchmark: { rendererCount: number };
+          }
+        ).__fiberBenchmark.rendererCount,
+    ),
+  ).toBeGreaterThan(0);
   const mounts = await page.evaluate(() =>
     window.__benchmark!.records.filter((record) => record.phase === "mount"),
   );
@@ -153,6 +229,7 @@ async function run(browser: Browser, app: AppName, trace = false, screenshot = f
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
     const page = await context.newPage();
+    await installFiberRecorder(page);
     await page.goto(origins[app]);
     if (screenshot) {
       await expect(page.getByRole("heading", { name: "Incident triage" })).toBeVisible();
@@ -180,12 +257,12 @@ test("matched incident workflows and profiling recorder", async ({ browser }) =>
     expect(results.compiler.actions.map((entry) => entry.state)).toEqual(
       results.baseline.actions.map((entry) => entry.state),
     );
-    const selectedRows = (app: AppName) =>
+    const selectedRowRenders = (app: AppName) =>
       results[app].actions
         .find((entry) => entry.name === "select incident")!
-        .records.filter((record) => record.id.startsWith("row:") && record.phase !== "mount")
-        .length;
-    expect(selectedRows("baseline")).toBeGreaterThan(selectedRows("manual"));
+        .fiberRenders.filter((id) => id.startsWith("row:")).length;
+    expect(selectedRowRenders("compiler")).toBeGreaterThan(selectedRowRenders("manual"));
+    expect(selectedRowRenders("baseline")).toBeGreaterThan(selectedRowRenders("manual"));
     const selectedOpenButtons = (app: AppName) =>
       results[app].actions
         .find((entry) => entry.name === "select incident")!

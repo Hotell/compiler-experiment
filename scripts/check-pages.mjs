@@ -89,7 +89,11 @@ if (preview) {
       await page.getByRole("link", { name: "Latest benchmark report" }).click();
       assert.equal(new URL(page.url()).pathname, `${prefix}report/`);
       assert.equal(
-        await page.getByRole("heading", { name: "Committed subtree updates" }).count(),
+        await page
+          .getByRole("heading", {
+            name: "Component work and committed updates",
+          })
+          .count(),
         1,
       );
       const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
