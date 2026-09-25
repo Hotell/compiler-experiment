@@ -110,6 +110,12 @@ if (preview) {
           "02 / MANUAL",
           "03 / COMPILER",
         ]);
+        assert.deepEqual(
+          await page
+            .getByRole("link", { name: "Compare output" })
+            .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+          ["./sources/", "./sources/compiler-manual-App.html", "./sources/"],
+        );
         assert.equal(await page.getByText(/Compiler (on|off)/).count(), 0);
         assert.ok(
           (await page.locator(".route").first().boundingBox()).height <=
@@ -145,6 +151,39 @@ if (preview) {
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         `${name} analyzer report overflows horizontally`,
       );
+      await page.goto(base);
+      await page.getByRole("link", { name: "Compare output" }).first().click();
+      assert.equal(new URL(page.url()).pathname, `${prefix}sources/`);
+      assert.equal(await page.getByRole("heading", { name: "Compiled sources" }).count(), 1);
+      assert.ok(await page.locator(".diff-line.added").count());
+      assert.ok(await page.locator(".diff-line.removed").count());
+      assert.deepEqual(await undersizedText(page), [], `${name} source text is below 16px`);
+      assert.ok(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        `${name} source comparison overflows horizontally`,
+      );
+      await page.screenshot({ path: `benchmark/results/sources-${name}.png` });
+      const compilerSource = await page.request.get(
+        new URL(
+          await page.getByRole("link", { name: "compiler source" }).getAttribute("href"),
+          page.url(),
+        ).href,
+      );
+      assert.equal(compilerSource.status(), 200);
+      assert.match(await compilerSource.text(), /react\/compiler-runtime/);
+      const baselineSource = await page.request.get(
+        new URL(
+          await page.getByRole("link", { name: "baseline source" }).getAttribute("href"),
+          page.url(),
+        ).href,
+      );
+      assert.equal(baselineSource.status(), 200);
+      assert.doesNotMatch(await baselineSource.text(), /react\/compiler-runtime/);
+      await page.locator("#module").selectOption("providers");
+      await page.waitForURL(new URL("sources/compiler-baseline-providers.html", base).href);
+      await page.locator("#pair").selectOption("manual-baseline");
+      await page.waitForURL(new URL("sources/manual-baseline-providers.html", base).href);
+      assert.equal((await page.locator(".diff-header span").allTextContents())[2], "providers.js");
       await page.goto(base);
       await page.getByRole("link", { name: "Latest benchmark report" }).click();
       assert.equal(new URL(page.url()).pathname, `${prefix}report/`);
@@ -209,7 +248,7 @@ if (preview) {
       await page.close();
     }
     console.log(
-      "Pages chooser, analyzer and benchmark reports, and all three apps passed desktop/mobile navigation checks.",
+      "Pages chooser, source comparison, analyzer and benchmark reports, and all three apps passed desktop/mobile navigation checks.",
     );
   } finally {
     await browser.close();

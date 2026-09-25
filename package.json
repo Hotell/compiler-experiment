@@ -25,6 +25,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "chrome-launcher": "1.2.1",
+    "diff": "^9.0.0",
     "husky": "^9.1.7",
     "lighthouse": "12.8.2",
     "lucide-react": "0.577.0",
