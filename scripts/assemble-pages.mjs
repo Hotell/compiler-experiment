@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { Marked, Renderer } from "marked";
+import { parse, serialize } from "parse5";
 
 const output = "dist-pages";
 for (const app of ["compiler", "manual", "baseline"]) {
@@ -19,6 +21,41 @@ for (const app of ["compiler", "manual", "baseline"]) {
     force: true,
   });
 }
+const analyzerDirectory = `${output}/analyzer`;
+mkdirSync(analyzerDirectory, { recursive: true });
+const analyzerDocument = parse(
+  execFileSync(
+    "yarn",
+    [
+      "exec",
+      "react-compiler-analyzer",
+      "analyze",
+      "apps/compiler/src",
+      "shared",
+      "benchmark/recorder.tsx",
+      "--format",
+      "html",
+      "--verbose",
+    ],
+    { encoding: "utf8" },
+  ),
+);
+const analyzerHead = analyzerDocument.childNodes
+  .find((node) => node.nodeName === "html")
+  ?.childNodes.find((node) => node.nodeName === "head");
+assert.ok(analyzerHead, "Analyzer report is missing its document head");
+analyzerHead.childNodes.push({
+  nodeName: "link",
+  tagName: "link",
+  attrs: [
+    { name: "rel", value: "stylesheet" },
+    { name: "href", value: "../analyzer.css" },
+  ],
+  namespaceURI: "http://www.w3.org/1999/xhtml",
+  childNodes: [],
+  parentNode: analyzerHead,
+});
+writeFileSync(`${analyzerDirectory}/index.html`, serialize(analyzerDocument));
 const reportDirectory = `${output}/report`;
 mkdirSync(reportDirectory, { recursive: true });
 const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));

@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/@fluentui/react-compiler-analyzer/rca.config.schema.json",
+  "mode": "infer",
+  "format": "cli",
+  "exclude": [
+    "**/__tests__/**",
+    "**/testing/**",
+    "**/__mocks__/**",
+    "**/*.spec.*",
+    "**/*.test.*",
+    "**/*.stories.*",
+    "**/*.cy.*",
+    "**/*.e2e.*",
+    "**/e2e/**"
+  ]
+}

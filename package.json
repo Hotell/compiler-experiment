@@ -14,9 +14,11 @@
     "preview:pages": "node scripts/check-pages.mjs --serve",
     "build:profile": "yarn workspace @experiment/compiler build:profile && yarn workspace @experiment/manual build:profile && yarn workspace @experiment/baseline build:profile",
     "benchmark": "yarn fmt:check && yarn lint && node scripts/check-guard.mjs && yarn typecheck && yarn build && node scripts/check-transform.mjs && yarn build:profile && playwright test && node scripts/report.mjs && node --test scripts/report.test.mjs",
-    "benchmark:trace": "BENCHMARK_TRACE=1 yarn benchmark"
+    "benchmark:trace": "BENCHMARK_TRACE=1 yarn benchmark",
+    "analyze:compiler": "react-compiler-analyzer analyze apps/compiler/src shared benchmark/recorder.tsx --format json"
   },
   "devDependencies": {
+    "@fluentui/react-compiler-analyzer": "0.0.0-experimental.rc-analyzer.20260924-86e4c3bca3.0",
     "@playwright/test": "1.58.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -28,6 +30,7 @@
     "oxc-transform-react": "0.145.0",
     "oxfmt": "0.70.0",
     "oxlint": "1.85.0",
+    "parse5": "^8.0.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3",

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f6f8f8" />
-    <title>Signal / Choose an implementation</title>
+    <title>React Compiler vs. manual memoization / Signal</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -25,16 +25,25 @@
     </header>
 
     <main>
-      <div class="intro">
-        <div class="eyebrow">
-          <span class="live-dot" aria-hidden="true"></span> REACT 19 / INCIDENT OPERATIONS
+      <section class="intro">
+        <img
+          src="./assets/compiler.jpg"
+          width="1280"
+          height="800"
+          alt="Incident triage workspace with the shared incident dataset"
+        />
+        <div class="intro-copy">
+          <div class="eyebrow">
+            <span class="live-dot" aria-hidden="true"></span> REACT 19 / COMPARISON
+          </div>
+          <h1>React Compiler vs. manual memoization</h1>
+          <p>
+            A like-for-like comparison of compiler-managed memoization and hand-written React.memo,
+            useMemo, and useCallback, with an unmemoized baseline. Review the measurements and
+            explore each build to decide where to invest.
+          </p>
         </div>
-        <h1>Choose an implementation</h1>
-        <p>
-          One incident workspace, three optimization strategies. Open any version to explore the
-          same 200-incident workflow.
-        </p>
-      </div>
+      </section>
 
       <a class="report-entry" href="./report/" aria-label="Latest benchmark report">
         <span
@@ -47,81 +56,51 @@
       </a>
 
       <div class="routes" aria-label="Available implementations">
-        <a class="route" href="./compiler/">
-          <div class="preview">
-            <img
-              src="./assets/compiler.jpg"
-              width="1280"
-              height="800"
-              alt="Incident triage console, React Compiler version"
-            />
-          </div>
-          <div class="route-body">
+        <article class="route">
+          <a class="route-main" href="./baseline/">
             <div class="route-meta">
-              <span class="route-index">01 / AUTOMATIC</span
-              ><span class="route-state"
-                ><span class="state-dot" aria-hidden="true"></span> Compiler on</span
-              >
-            </div>
-            <div class="route-bottom">
-              <div>
-                <h2>React Compiler</h2>
-                <p>Oxc compiler enabled. No manual memoization hooks.</p>
-              </div>
-              <span class="route-arrow" aria-hidden="true">↗</span>
-            </div>
-          </div>
-        </a>
-        <a class="route" href="./manual/">
-          <div class="preview">
-            <img
-              src="./assets/manual.jpg"
-              width="1280"
-              height="800"
-              alt="Incident triage console, manually memoized version"
-            />
-          </div>
-          <div class="route-body">
-            <div class="route-meta">
-              <span class="route-index">02 / EXPLICIT</span
-              ><span class="route-state"
-                ><span class="state-dot amber" aria-hidden="true"></span> Compiler off</span
-              >
-            </div>
-            <div class="route-bottom">
-              <div>
-                <h2>Manual memoization</h2>
-                <p>React.memo, useMemo and useCallback where useful.</p>
-              </div>
-              <span class="route-arrow" aria-hidden="true">↗</span>
-            </div>
-          </div>
-        </a>
-        <a class="route" href="./baseline/">
-          <div class="preview">
-            <img
-              src="./assets/baseline.jpg"
-              width="1280"
-              height="800"
-              alt="Incident triage console, unoptimized baseline version"
-            />
-          </div>
-          <div class="route-body">
-            <div class="route-meta">
-              <span class="route-index">03 / BASELINE</span
-              ><span class="route-state"
-                ><span class="state-dot amber" aria-hidden="true"></span> Compiler off</span
-              >
+              <span class="route-index">01 / BASELINE</span>
             </div>
             <div class="route-bottom">
               <div>
                 <h2>No memoization</h2>
-                <p>Plain React components without compiler or memo hooks.</p>
+                <p>No React Compiler or manual memoization.</p>
               </div>
               <span class="route-arrow" aria-hidden="true">↗</span>
             </div>
+          </a>
+        </article>
+        <article class="route">
+          <a class="route-main" href="./manual/">
+            <div class="route-meta">
+              <span class="route-index">02 / MANUAL</span>
+            </div>
+            <div class="route-bottom">
+              <div>
+                <h2>Manual memoization</h2>
+                <p>React.memo, useMemo, and useCallback applied by hand.</p>
+              </div>
+              <span class="route-arrow" aria-hidden="true">↗</span>
+            </div>
+          </a>
+        </article>
+        <article class="route">
+          <a class="route-main" href="./compiler/">
+            <div class="route-meta">
+              <span class="route-index">03 / COMPILER</span>
+            </div>
+            <div class="route-bottom">
+              <div>
+                <h2>React Compiler</h2>
+                <p>Compiler-managed memoization, with no manual memoization.</p>
+              </div>
+              <span class="route-arrow" aria-hidden="true">↗</span>
+            </div>
+          </a>
+          <div class="route-extra">
+            <a href="./analyzer/">Analyzer report <span aria-hidden="true">↗</span></a>
           </div>
-        </a>
+        </article>
       </div>
       <footer>
         <span>IDENTICAL DATASET · MATCHED INTERACTIONS</span

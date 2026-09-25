@@ -1,0 +1,21 @@
+body {
+  font-size: 16px;
+}
+
+.meta-chip,
+.meta-label,
+h4,
+code,
+table,
+pre.code,
+.log-line,
+.fold-count,
+.toc-title,
+.toc-act,
+.toc-toggle,
+.toc-row,
+.toc-row.toc-child,
+.toc-count,
+details.fold > summary::before {
+  font-size: 16px;
+}
