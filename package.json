@@ -5,6 +5,7 @@
     "apps/*"
   ],
   "scripts": {
+    "postinstall": "husky",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
     "lint": "oxlint apps shared benchmark scripts --ignore-pattern benchmark/fixtures/**",
@@ -24,9 +25,11 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
     "chrome-launcher": "1.2.1",
+    "husky": "^9.1.7",
     "lighthouse": "12.8.2",
     "lucide-react": "0.577.0",
     "marked": "18.0.14",
+    "nano-staged": "^1.0.2",
     "oxc-transform-react": "0.145.0",
     "oxfmt": "0.70.0",
     "oxlint": "1.85.0",
@@ -35,6 +38,9 @@
     "react-dom": "19.3.0",
     "typescript": "5.9.3",
     "vite": "8.3.0"
+  },
+  "nano-staged": {
+    "*.{js,jsx,ts,tsx,mjs,cjs,css,html,json,md,yml,yaml}": "oxfmt"
   },
   "engines": {
     "node": ">=22.12.0"

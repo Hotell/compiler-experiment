@@ -53,8 +53,7 @@ if (preview) {
           (element) =>
             element.getClientRects().length &&
             [...element.childNodes].some(
-              (node) =>
-                node.nodeType === Node.TEXT_NODE && node.textContent.trim(),
+              (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim(),
             ),
         )
         .map((element) => ({
@@ -89,10 +88,7 @@ if (preview) {
           await page
             .locator("img")
             .evaluateAll(
-              (images) =>
-                images.filter(
-                  (image) => image.complete && image.naturalWidth > 0,
-                ).length,
+              (images) => images.filter((image) => image.complete && image.naturalWidth > 0).length,
             ),
           1,
           "shared chooser image must load",
@@ -101,9 +97,7 @@ if (preview) {
         assert.deepEqual(
           await page
             .locator(".route-main")
-            .evaluateAll((links) =>
-              links.map((link) => link.getAttribute("href")),
-            ),
+            .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
           ["./baseline/", "./manual/", "./compiler/"],
         );
         assert.deepEqual(await page.locator(".route h2").allTextContents(), [
@@ -123,11 +117,7 @@ if (preview) {
           `${name} implementation cards should be compact`,
         );
         if (app === "compiler") {
-          assert.deepEqual(
-            await undersizedText(page),
-            [],
-            `${name} chooser text is below 16px`,
-          );
+          assert.deepEqual(await undersizedText(page), [], `${name} chooser text is below 16px`);
           await page.screenshot({ path: `benchmark/results/pages-${name}.png` });
           assert.ok(
             await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -142,12 +132,7 @@ if (preview) {
       await page.goto(base);
       await page.getByRole("link", { name: "Analyzer report" }).click();
       assert.equal(new URL(page.url()).pathname, `${prefix}analyzer/`);
-      assert.equal(
-        await page
-          .getByRole("heading", { name: "React Compiler Analysis" })
-          .count(),
-        1,
-      );
+      assert.equal(await page.getByRole("heading", { name: "React Compiler Analysis" }).count(), 1);
       assert.ok(
         (await page
           .locator(".log-line")
@@ -155,15 +140,9 @@ if (preview) {
           .count()) > 0,
         `${name} analyzer report must include verbose scan logs`,
       );
-      assert.deepEqual(
-        await undersizedText(page),
-        [],
-        `${name} analyzer text is below 16px`,
-      );
+      assert.deepEqual(await undersizedText(page), [], `${name} analyzer text is below 16px`);
       assert.ok(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         `${name} analyzer report overflows horizontally`,
       );
       await page.goto(base);
@@ -183,11 +162,7 @@ if (preview) {
         1,
       );
       assert.equal(await page.locator("article table").count(), 7);
-      assert.deepEqual(
-        await undersizedText(page),
-        [],
-        `${name} benchmark text is below 16px`,
-      );
+      assert.deepEqual(await undersizedText(page), [], `${name} benchmark text is below 16px`);
       const reportFontSizes = await page.evaluate(() => ({
         paragraphs: [...document.querySelectorAll(".report-body p")].map((element) =>
           parseFloat(getComputedStyle(element).fontSize),

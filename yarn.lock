@@ -1973,9 +1973,11 @@ __metadata:
     "@types/react-dom": "npm:19.3.0"
     "@vitejs/plugin-react": "npm:6.1.1"
     chrome-launcher: "npm:1.2.1"
+    husky: "npm:^9.1.7"
     lighthouse: "npm:12.8.2"
     lucide-react: "npm:0.577.0"
     marked: "npm:18.0.14"
+    nano-staged: "npm:^1.0.2"
     oxc-transform-react: "npm:0.145.0"
     oxfmt: "npm:0.70.0"
     oxlint: "npm:1.85.0"
@@ -2408,6 +2410,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"husky@npm:^9.1.7":
+  version: 9.1.7
+  resolution: "husky@npm:9.1.7"
+  bin:
+    husky: bin.js
+  checksum: 10c0/35bb110a71086c48906aa7cd3ed4913fb913823715359d65e32e0b964cb1e255593b0ae8014a5005c66a68e6fa66c38dcfa8056dbbdfb8b0187c0ffe7ee3a58f
+  languageName: node
+  linkType: hard
+
 "image-ssim@npm:^0.2.0":
   version: 0.2.0
   resolution: "image-ssim@npm:0.2.0"
@@ -2821,6 +2832,15 @@ __metadata:
   version: 2.1.3
   resolution: "ms@npm:2.1.3"
   checksum: 10c0/d924b57e7312b3b63ad21fc5b3dc0af5e78d61a1fc7cfb5457edaf26326bf62be5307cc87ffb6862ef1c2b33b0233cdb5d4f01c4c958cc0d660948b65a287a48
+  languageName: node
+  linkType: hard
+
+"nano-staged@npm:^1.0.2":
+  version: 1.0.2
+  resolution: "nano-staged@npm:1.0.2"
+  bin:
+    nano-staged: lib/bin.js
+  checksum: 10c0/bc69db9fd60484e32bd3f44d6038e2f87dae8f176df56a3798a187c55568cfe48011d995884e7cbb55a5c0c345e7461c0048950b01a4136c64ad4f0e36b03334
   languageName: node
   linkType: hard
 
