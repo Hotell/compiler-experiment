@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => ({
   base: process.env.PAGES_BASE ?? "/",
   plugins: [
     react({ compiler: { compilationMode: "infer", logDiagnostics: true } }),
-    ...(process.env.PAGES_BASE ? [sourceSnapshots("compiler")] : []),
+    ...(mode === "production" ? [sourceSnapshots("compiler")] : []),
   ],
   resolve: mode === "profile" ? { alias: { "react-dom/client": "react-dom/profiling" } } : {},
   build: { outDir: mode === "profile" ? "dist-profile" : "dist", manifest: true },

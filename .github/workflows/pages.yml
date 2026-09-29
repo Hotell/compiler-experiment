@@ -38,6 +38,10 @@ jobs:
           test -s benchmark/results/comparison.md
           test -s benchmark/results/comparison.json
           test -s benchmark/results/measurements.json
+          test -s benchmark/results/provenance.json
+          test -s benchmark/results/lighthouse.json
+          test -s benchmark/results/row-memo/report.html
+          test -s benchmark/results/row-memo/measurements.json
           echo "BENCHMARK_RUN_ID=$BENCHMARK_RUN_ID" >> "$GITHUB_ENV"
           echo "BENCHMARK_SHA=$BENCHMARK_SHA" >> "$GITHUB_ENV"
       - run: yarn fmt:check && yarn lint && yarn typecheck

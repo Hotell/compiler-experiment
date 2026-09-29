@@ -510,7 +510,18 @@ for (const file of ["../shared/App.tsx", "../apps/manual/src/App.tsx"]) {
           source,
           (node) => ts.isVariableDeclaration(node) && node.name.getText() === name,
         )[0];
-        assert.equal(declaration.initializer.expression.getText(), "memo");
+        if (name === "IncidentRow") {
+          const selection = declaration.initializer;
+          assert.ok(ts.isConditionalExpression(selection));
+          assert.equal(selection.condition.getText(), "__ROW_MEMO_ENABLED__");
+          assert.ok(ts.isCallExpression(selection.whenTrue));
+          assert.equal(selection.whenTrue.expression.getText(), "memo");
+          assert.equal(selection.whenTrue.arguments.length, 1);
+          assert.equal(selection.whenTrue.arguments[0].getText(), "IncidentRowImpl");
+          assert.equal(selection.whenFalse.getText(), "IncidentRowImpl");
+        } else {
+          assert.equal(declaration.initializer.expression.getText(), "memo");
+        }
       }
     }
   });

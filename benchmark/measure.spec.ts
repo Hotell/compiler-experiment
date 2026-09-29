@@ -240,7 +240,11 @@ test("matched incident workflows and profiling recorder", async ({ browser }) =>
       results[app].actions
         .find((entry) => entry.name === "select incident")!
         .fiberRenders.filter((id) => id.startsWith("row:")).length;
-    expect(selectedRowRenders("compiler")).toBeGreaterThan(selectedRowRenders("manual"));
+    for (const app of apps)
+      expect(
+        selectedRowRenders(app),
+        `${app} selection must record the changed row`,
+      ).toBeGreaterThan(0);
     expect(selectedRowRenders("baseline")).toBeGreaterThan(selectedRowRenders("manual"));
     const selectedOpenButtons = (app: AppName) =>
       results[app].actions

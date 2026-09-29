@@ -37,6 +37,8 @@ import {
   useWorkspace,
 } from "./providers";
 
+declare const __ROW_MEMO_ENABLED__: boolean;
+
 function Header() {
   const { reviews, addReview } = useReviews();
   return (
@@ -291,13 +293,7 @@ const FavoriteButton = memo(function FavoriteButton({
     </Button>
   );
 });
-const IncidentRow = memo(function IncidentRow({
-  incident,
-  selected,
-}: {
-  incident: Incident;
-  selected: boolean;
-}) {
+function IncidentRowImpl({ incident, selected }: { incident: Incident; selected: boolean }) {
   const { setSelectedId } = useSelectionActions();
   const { toggleFavorite } = useIncidentActions();
   const openIncident = useCallback(() => setSelectedId(incident.id), [incident.id, setSelectedId]);
@@ -339,7 +335,8 @@ const IncidentRow = memo(function IncidentRow({
       </td>
     </tr>
   );
-});
+}
+const IncidentRow = __ROW_MEMO_ENABLED__ ? memo(IncidentRowImpl) : IncidentRowImpl;
 function IncidentList({ incidents }: { incidents: Incident[] }) {
   const { selectedId } = useSelection();
   return (

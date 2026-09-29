@@ -16,7 +16,7 @@ jobs:
       - run: corepack enable
       - run: yarn install --immutable
       - run: yarn playwright install --with-deps chromium
-      - run: yarn benchmark
+      - run: yarn benchmark:all
       - name: Publish comparison summary
         if: always()
         run: |
@@ -33,11 +33,15 @@ jobs:
           name: compiler-comparison
           path: |
             benchmark/results/measurements.json
+            benchmark/results/provenance.json
             benchmark/results/comparison.json
             benchmark/results/comparison.md
+            benchmark/results/sources/
+            benchmark/results/row-memo/
             benchmark/results/favorite-*.svg
             benchmark/results/favorite-*.cpuprofile
             benchmark/results/lighthouse-*.json
+            benchmark/results/lighthouse.json
             benchmark/results/slowdown.json
             benchmark/results/selection-latency.json
           if-no-files-found: warn

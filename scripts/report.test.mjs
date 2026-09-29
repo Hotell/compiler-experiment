@@ -8,6 +8,14 @@ import {
   validateProfileRecords,
 } from "./profile-counts.mjs";
 import "./profile-counts.test.mjs";
+import {
+  ablationMarkdown,
+  evaluateComparison,
+  inspectRowCaching,
+  loadAblationEvidence,
+  selectionEvidence,
+} from "./report-evidence.mjs";
+import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
 
 test("comparison explains load, Lighthouse, CPU traces and the decision", () => {
   const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
@@ -16,7 +24,11 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.equal(report.versions.react, "19.3.0");
   assert.match(markdown, /React 19\.3\.0 profiling fiber/);
   const tables = lexer(markdown, { gfm: true }).filter((token) => token.type === "table");
-  assert.equal(tables.length, 7, "all comparison tables must render as GFM tables");
+  assert.equal(
+    tables.length,
+    report.rowMemo.status === "available" ? 8 : 7,
+    "all comparison tables must render as GFM tables",
+  );
   for (const table of tables) {
     assert.ok(table.rows.every((row) => row.length === table.header.length));
   }
@@ -28,9 +40,14 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /## CPU slowdown/);
   assert.match(markdown, /## Post-GC JS heap/);
   assert.match(markdown, /raw \/ gzip \(kB\)/);
-  assert.doesNotMatch(markdown, /gzip bytes/);
-  assert.match(markdown, /Row component work \(C \/ M \/ B\)/);
-  assert.match(markdown, /Queue component work \(C \/ M \/ B\)/);
+  const initialBytes = markdown
+    .split("## Initial-load production bytes")[1]
+    .split("## User-perceived")[0];
+  assert.doesNotMatch(initialBytes, /gzip bytes/);
+  assert.match(markdown, /Row render-work events \(C \/ M \/ B\)/);
+  assert.match(markdown, /Queue render-work events \(C \/ M \/ B\)/);
+  assert.doesNotMatch(markdown, /schema(?:[ -]?version)?[ :]*[vV]?2|does less row work/i);
+  assert.match(markdown, /not milliseconds, equal-cost CPU operations, DOM mutations/);
   assert.match(markdown, /JS-active sampled time/);
   assert.match(markdown, /BASE \(baseDuration\).*estimate/);
   assert.match(markdown, /BASE minus ACTUAL is not measured savings/);
@@ -40,10 +57,7 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /\[rootId, rootGeneration, commitSequence\]/);
   assert.match(markdown, /\[measurements\.json\]\(measurements\.json\)/);
   assert.ok(report.evaluation?.recommendation);
-  assert.equal(
-    report.evaluation.recommendation,
-    "No demonstrated selection-speed winner between compiler and manual; manual ships the smaller bundle.",
-  );
+  assert.deepEqual(report.evaluation, evaluateComparison(report));
   for (const app of ["compiler", "manual", "baseline"]) {
     assert.ok(report.bundles[app].total.gzip > 0);
     assert.ok(report.actions[app].find((action) => action.name === "select incident"));
@@ -58,12 +72,10 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
     assert.ok(existsSync(`benchmark/results/favorite-${app}.svg`));
   }
   const selected = (app) => report.actions[app].find((action) => action.name === "select incident");
-  assert.equal(selected("compiler").rowRenders, 67);
   assert.equal(selected("manual").rowRenders, 1);
   assert.equal(selected("baseline").rowRenders, 67);
   assert.doesNotMatch(report.evaluation.recommendation, /avoids more row work/);
   for (const [app, expected] of [
-    ["compiler", 4],
     ["manual", 2],
     ["baseline", 4],
   ]) {
@@ -84,8 +96,51 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
         .favoriteButtonRenders > 0,
     );
   }
-  assert.match(markdown, /Open button work \(C \/ M \/ B\) \| Favorite button work/);
+  assert.match(markdown, /Open-button events \(C \/ M \/ B\) \| Favorite-button events/);
   assert.ok(Number.isFinite(report.baselineDeltas.compiler.total.gzip.bytes));
+});
+
+test("report evidence matches measured sources, builds and optional ablation", () => {
+  const directory = "benchmark/results";
+  const report = JSON.parse(readFileSync(`${directory}/comparison.json`, "utf8"));
+  const markdown = readFileSync(`${directory}/comparison.md`, "utf8");
+  validateProvenance(report.provenance, directory);
+  const sources = ["compiler", "manual"].map((app) => {
+    const path = `sources/${app}-App.js`;
+    assert.equal(
+      hashFiles(directory, [path])[path],
+      report.provenance.builds[app].production["./sources/App.js"],
+    );
+    return readFileSync(`${directory}/${path}`, "utf8");
+  });
+  assert.deepEqual(report.rowCaching, inspectRowCaching(...sources));
+  assert.ok(markdown.includes(selectionEvidence(report.actions)));
+  assert.ok(markdown.includes(report.rowCaching.explanation));
+  if (report.rowCaching.status === "recognized") {
+    for (const { code } of report.rowCaching.excerpts) assert.ok(markdown.includes(code));
+    assert.match(markdown, /not a general inability of React Compiler/);
+  } else {
+    assert.match(markdown, /Generated-code pattern changed/);
+  }
+  assert.deepEqual(report.rowMemo, loadAblationEvidence(report));
+  assert.ok(markdown.includes(ablationMarkdown(report.rowMemo).join("\n")));
+  if (report.rowMemo.status === "available") {
+    assert.match(markdown, /byte-identical/);
+    assert.match(markdown, /cannot predict the benefit of adding memo to the compiler/);
+    assert.match(markdown, /Spanning zero is inconclusive, not equivalence/);
+    const mismatched = structuredClone(report);
+    mismatched.provenance.builds.manual.production[`./${report.bundles.manual.files.js[0]}`] =
+      "changed";
+    assert.throws(() => loadAblationEvidence(mismatched), /bytes differ/);
+    const older = structuredClone(report);
+    older.provenance.sourceFingerprint = "0".repeat(64);
+    const unavailable = loadAblationEvidence(older);
+    assert.equal(unavailable.status, "unavailable");
+    assert.doesNotMatch(ablationMarkdown(unavailable).join("\n"), /\]\(row-memo\//);
+  } else {
+    assert.match(markdown, /Ablation unavailable for this build/);
+    assert.doesNotMatch(markdown, /\]\(row-memo\//);
+  }
 });
 
 test("comparison preserves schema-v2 root phases and independent actual/base summaries", () => {

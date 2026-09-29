@@ -4,7 +4,7 @@ import { sourceSnapshots } from "../../scripts/source-snapshots.mjs";
 
 export default defineConfig(({ mode }) => ({
   base: process.env.PAGES_BASE ?? "/",
-  plugins: [react(), ...(process.env.PAGES_BASE ? [sourceSnapshots("baseline")] : [])],
+  plugins: [react(), ...(mode === "production" ? [sourceSnapshots("baseline")] : [])],
   resolve: mode === "profile" ? { alias: { "react-dom/client": "react-dom/profiling" } } : {},
   build: { outDir: mode === "profile" ? "dist-profile" : "dist", manifest: true },
 }));

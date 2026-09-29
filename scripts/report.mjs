@@ -1,6 +1,15 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { gzipSync } from "node:zlib";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
+import { measureBundle } from "./bundle-size.mjs";
+import { comparisonBuilds, validateProvenance } from "./benchmark-provenance.mjs";
+import {
+  ablationMarkdown,
+  evaluateComparison,
+  inspectRowCaching,
+  loadAblationEvidence,
+  rowComparison,
+  selectionEvidence,
+} from "./report-evidence.mjs";
 import {
   assertMeasurementsV2,
   countProfileRecords,
@@ -12,6 +21,13 @@ import {
 const directory = "benchmark/results";
 const input = JSON.parse(readFileSync(`${directory}/measurements.json`, "utf8"));
 assertMeasurementsV2(input);
+const provenance = JSON.parse(readFileSync(`${directory}/provenance.json`, "utf8"));
+validateProvenance(provenance, directory);
+assert.deepEqual(
+  comparisonBuilds(),
+  provenance.builds,
+  "Builds changed since measurement; rerun yarn benchmark",
+);
 const slowdown = JSON.parse(readFileSync(`${directory}/slowdown.json`, "utf8"));
 const selectionLatency = JSON.parse(readFileSync(`${directory}/selection-latency.json`, "utf8"));
 const audits = JSON.parse(readFileSync(`${directory}/lighthouse.json`, "utf8"));
@@ -93,50 +109,9 @@ function flameChart(app) {
   };
 }
 
-function bundle(app) {
-  const directory = `apps/${app}/dist`;
-  const manifest = JSON.parse(readFileSync(`${directory}/.vite/manifest.json`, "utf8"));
-  const entry = Object.values(manifest).find((chunk) => chunk.isEntry);
-  assert.ok(entry, `${app} is missing an entry chunk`);
-  const visited = new Set();
-  const files = { js: new Set(), css: new Set() };
-  const loadedLater = new Set();
-  function visit(chunk) {
-    if (visited.has(chunk)) return;
-    visited.add(chunk);
-    const item = manifest[chunk];
-    assert.ok(item, `${app} is missing manifest chunk ${chunk}`);
-    if (item.file.endsWith(".js")) files.js.add(item.file);
-    for (const css of item.css ?? []) files.css.add(css);
-    for (const dependency of item.imports ?? []) visit(dependency);
-    for (const dependency of item.dynamicImports ?? []) loadedLater.add(dependency);
-  }
-  visit(Object.keys(manifest).find((key) => manifest[key] === entry));
-  function sizes(paths) {
-    return [...paths].reduce(
-      (total, path) => {
-        const bytes = readFileSync(`${directory}/${path}`);
-        total.raw += bytes.length;
-        total.gzip += gzipSync(bytes).length;
-        return total;
-      },
-      { raw: 0, gzip: 0 },
-    );
-  }
-  const js = sizes(files.js);
-  const css = sizes(files.css);
-  assert.ok(js.raw > 0 && css.raw > 0, `${app} needs nonzero entry JS and CSS`);
-  return {
-    js,
-    css,
-    total: { raw: js.raw + css.raw, gzip: js.gzip + css.gzip },
-    files: { js: [...files.js], css: [...files.css] },
-    loadedLater: [...loadedLater],
-  };
-}
-
 const report = {
   schemaVersion: 2,
+  provenance,
   versions: {
     node: process.version,
     playwrightChromium: input.browser,
@@ -149,7 +124,7 @@ const report = {
   },
   workload:
     "200 deterministic incidents; isolated Chromium contexts; one warm-up; 3 repetitions alternating app order; initial mounts outside actions, action mounts reported separately from updates",
-  bundles: Object.fromEntries(apps.map((app) => [app, bundle(app)])),
+  bundles: Object.fromEntries(apps.map((app) => [app, measureBundle(`apps/${app}/dist`)])),
   actions: {},
   load: {},
   interactions: { selection: {} },
@@ -286,18 +261,18 @@ report.baselineDeltas = Object.fromEntries(
     ),
   ]),
 );
-const selectedRows = Object.fromEntries(
-  apps.map((app) => [
-    app,
-    report.actions[app].find((action) => action.name === "select incident").rowRenders,
-  ]),
+report.evaluation = evaluateComparison(report);
+mkdirSync(`${directory}/sources`, { recursive: true });
+for (const app of ["compiler", "manual"])
+  cpSync(`apps/${app}/dist/sources/App.js`, `${directory}/sources/${app}-App.js`);
+report.rowCaching = inspectRowCaching(
+  readFileSync(`${directory}/sources/compiler-App.js`, "utf8"),
+  readFileSync(`${directory}/sources/manual-App.js`, "utf8"),
 );
-report.evaluation = {
-  recommendation:
-    "No demonstrated selection-speed winner between compiler and manual; manual ships the smaller bundle.",
-  rationale: `With 4x CPU slowdown, median selection-to-detail DOM was ${report.interactions.selection.compiler.medianDomMs} ms (compiler) vs ${report.interactions.selection.manual.medianDomMs} ms (manual), and two-frame paint opportunity was ${report.interactions.selection.compiler.medianPaintMs} vs ${report.interactions.selection.manual.medianPaintMs} ms. Compiler vs manual bundle: ${signedKB(report.deltas.total.gzip.bytes)} kB gzip. The fiber diagnostic marks ${selectedRows.compiler} vs ${selectedRows.manual} row components during selection, but that does not quantify their cached work or establish latency.`,
-  caveat: `Twenty warmed interactions in one Chromium process and three local load/Lighthouse repetitions are advisory, not statistical proof or real-user evidence. Paint opportunity is not a guaranteed presentation timestamp. Component work uses internal React ${report.versions.react} profiling fiber flags, not a public API; revalidate after upgrades. The Oxc compiler integration is experimental.`,
-};
+report.rowMemo = loadAblationEvidence(report);
+if (process.argv.includes("--require-ablation"))
+  assert.equal(report.rowMemo.status, "available", report.rowMemo.reason);
+if (report.rowMemo.status !== "available") console.warn(report.rowMemo.reason);
 writeFileSync(`${directory}/comparison.json`, JSON.stringify(report, null, 2));
 
 const lines = [
@@ -409,40 +384,56 @@ const lines = [
   ]),
   "## Component work and committed updates (median of 3 runs)",
   "",
-  `C = compiler; M = manual; B = baseline. Row/queue/button columns count mounted-already components whose React ${report.versions.react} profiling fiber has the PerformedWork flag in a completed commit (a version-specific DevTools-like diagnostic, not a complete function-invocation count). Only the whole-app commits column comes from the external root React \`<Profiler>\` callback. Nested Profiler subtree callback counts remain separately in comparison.json: a callback does **not** prove its wrapped component function ran or quantify its cost. These are not additive counts or an API guaranteed across React releases.`,
+  `C = compiler; M = manual; B = baseline. A render-work event marks an already-mounted component whose React ${report.versions.react} profiling fiber records PerformedWork in a completed update. A component can contribute events in multiple commits. Events are **not milliseconds, equal-cost CPU operations, DOM mutations, or a complete function-invocation count**. Only whole-app commits come from the external root React \`<Profiler>\`; nested callbacks do not prove the wrapped component ran. These internal diagnostics are not additive or an API guaranteed across React releases.`,
   "",
-  "| Action | Whole-app commits (C / M / B) | Queue component work (C / M / B) | Row component work (C / M / B) | Open button work (C / M / B) | Favorite button work (C / M / B) | Row comparison |",
+  "| Action | Whole-app commits (C / M / B) | Queue render-work events (C / M / B) | Row render-work events (C / M / B) | Open-button events (C / M / B) | Favorite-button events (C / M / B) | Row event comparison |",
   "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
   ...report.actions.compiler.map((action, index) => {
     const [compiler, manual, baseline] = apps.map((app) => report.actions[app][index]);
     assert.ok(apps.every((app) => report.actions[app][index].name === action.name));
     const triplet = (key) => `${compiler[key]} / ${manual[key]} / ${baseline[key]}`;
-    const comparison =
-      compiler.rowRenders === manual.rowRenders
-        ? baseline.rowRenders > compiler.rowRenders
-          ? `C = M; ${baseline.rowRenders - compiler.rowRenders} fewer rows than B`
-          : "Tie on row work"
-        : `${compiler.rowRenders < manual.rowRenders ? "C" : "M"} does less row work`;
+    const comparison = rowComparison(compiler.rowRenders, manual.rowRenders, baseline.rowRenders);
     return `| ${action.name} | ${triplet("commits")} | ${triplet("queueRenders")} | ${triplet("rowRenders")} | ${triplet("openButtonRenders")} | ${triplet("favoriteButtonRenders")} | ${comparison} |`;
   }),
   "",
-  "On queue switch, only the previously and newly selected queue items need to do work; the fiber diagnostic shows whether other queue item components also ran.",
+  "### Why equal row counts do not mean equal work",
   "",
-  "Whole-app commits count exactly one external root callback per [rootId, rootGeneration, commitSequence], including any root mount inside an action. Initial-load mounts are outside action windows. Subtree mounts do not add root commits. Records require one root per commit, unique boundary IDs, matching commitTime within a commit and no ambiguous timestamp reuse within a root lifecycle; equal timestamps in different roots or root lifetimes are independent.",
-  `Component-work counts instead use React ${report.versions.react}'s internal PerformedWork fiber flag and exclude mounts, including rows reappearing after a filter reset. They can differ from subtree callback counts; neither measure captures aborted renders or guarantees user-visible speedups. Action capture waits for semantic outcomes and completed timing/diagnostic batches under this app's synchronous-workload contract, not arbitrary future asynchronous work. Search fill is bulk input; sort and reset is an aggregate workflow.`,
+  selectionEvidence(report.actions),
   "",
-  "### Render durations and JSON fields (schema version 2)",
+  report.rowCaching.explanation,
   "",
-  "measurements.json and comparison.json use schemaVersion 2. Older measurements must be regenerated with yarn benchmark: the external boundaries now include their component bodies, so old and new durations are not interchangeable. Root includes App and provider render bodies; shell, toolbar, list, detail, rows, queue items and buttons are inclusive subtree measurements. Overlapping root/parent/child durations are never summed into a total or treated as component self-time.",
+  `The explanation is scoped to oxc-transform-react ${report.versions.oxcTransformReact}, this workload and the inspected output, not every React Compiler implementation. [Compiler App snapshot](sources/compiler-App.js) / [Manual App snapshot](sources/manual-App.js) were captured from the measured production builds. They are post-transform, pre-bundle inspection artifacts; later bundling and minification can change the shipped code.`,
+  "",
+  ...(report.rowCaching.status === "recognized"
+    ? [
+        "<details>",
+        "<summary>Inspect the generated cache boundaries</summary>",
+        "",
+        ...report.rowCaching.excerpts.flatMap(({ label, code }) => [
+          `**${label}**`,
+          "",
+          "```js",
+          code,
+          "```",
+          "",
+        ]),
+        "</details>",
+        "",
+      ]
+    : []),
+  "### Reading the Profiler durations",
+  "",
+  "Root includes App and provider render bodies; shell, toolbar, list, detail, rows, queue items and buttons are inclusive subtree measurements. Overlapping root/parent/child durations are never summed into a total or treated as component self-time.",
   "",
   "ACTUAL (actualDuration) is the render work React measured for the profiled subtree in that commit. BASE (baseDuration) is React's estimated full-subtree render cost, derived from the most recently measured render cost of each component; it is not a separately measured unoptimized run. It can retain costs from earlier renders and does not undo useMemo or compiler caching or reconstruct their uncached calculation costs. BASE minus ACTUAL is not measured savings, and neither duration is event-handler, layout, paint or end-to-end interaction time.",
   "",
-  "In comparison.json, actions[app][i].commits is the median completed root-commit count across runs, and rootPhaseCounts preserves mount, update and nested-update separately. The root, shell, toolbar, list, detail, rows, queueItems, openButtons and favoriteButtons fields count non-mount callbacks (update plus nested-update), not function calls. rowRenders, queueRenders, openButtonRenders and favoriteButtonRenders retain the separate fiber-work counts. affectedRows lists distinct non-mount row IDs. The mounts object has the same boundary callback fields and affectedRows for action mounts only; root mounts are also reflected in rootPhaseCounts.mount.",
+  "Whole-app commits count one external root callback per [rootId, rootGeneration, commitSequence]. Initial-load mounts are outside action windows; action mounts remain separate from update-event counts. Capture waits for semantic outcomes and completed batches for this synchronous workload, not arbitrary future asynchronous work. Search fills the input in bulk; sort and reset is an aggregate workflow.",
   "",
-  "medianDurationMs (ACTUAL) and medianBaseDurationMs (BASE) each have root, shell, toolbar, list, detail, rows, queueItems, openButtons and favoriteButtons keys. Each is the median across observed per-run medians for non-mount callbacks, computed independently for actualDuration and baseDuration. mounts.medianDurationMs and mounts.medianBaseDurationMs summarize mount callbacks instead. runs retains each run's counts, rootPhaseCounts, durationMs, baseDurationMs and mounts (with its own durationMs and baseDurationMs). null means no matching callback was observed, while 0 is a measured zero; null runs are excluded from duration medians, never replaced with zero. Count and phase medians are computed field by field, so their medians need not add up. Raw phases, actualDuration, baseDuration, timestamps and root/commit/boundary lifecycle identities remain in [measurements.json](measurements.json).",
+  "In [comparison.json](comparison.json), medianDurationMs (ACTUAL) and medianBaseDurationMs (BASE) are independently computed medians across per-run callback medians, not interaction totals. Mount summaries and per-run observations remain separate. null means no matching callback was observed, while 0 is a measured zero. Raw actual/base durations and lifecycle identities remain in [measurements.json](measurements.json).",
   "",
   "All Profiler durations are advisory milliseconds and include profiling overhead; they are never CI thresholds. Native profile-build measurements are separate from normal-build 4x CPU timings and browser sampling diagnostics. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",
   "",
+  ...ablationMarkdown(report.rowMemo),
 ];
 writeFileSync(`${directory}/comparison.md`, lines.join("\n"));
 console.log(`Wrote ${directory}/comparison.json and comparison.md`);

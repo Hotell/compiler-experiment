@@ -131,6 +131,21 @@
   border-radius: 2px;
   font-size: 16px;
 }
+.report-body pre {
+  max-width: 100%;
+  padding: 16px;
+  overflow-x: auto;
+  background: #eaf2ef;
+  border-radius: 4px;
+}
+.report-body pre code {
+  padding: 0;
+}
+.report-body summary {
+  cursor: pointer;
+  color: #167668;
+  font-size: 16px;
+}
 .report-main footer {
   font-size: 16px;
 }

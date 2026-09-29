@@ -14,8 +14,12 @@
     "build:pages": "PAGES_BASE=/compiler-experiment/compiler/ yarn workspace @experiment/compiler build && PAGES_BASE=/compiler-experiment/manual/ yarn workspace @experiment/manual build && PAGES_BASE=/compiler-experiment/baseline/ yarn workspace @experiment/baseline build && node scripts/assemble-pages.mjs",
     "preview:pages": "node scripts/check-pages.mjs --serve",
     "build:profile": "yarn workspace @experiment/compiler build:profile && yarn workspace @experiment/manual build:profile && yarn workspace @experiment/baseline build:profile",
-    "benchmark": "yarn fmt:check && yarn lint && node scripts/check-guard.mjs && node --test benchmark/capture.test.mjs && yarn typecheck && yarn build && node scripts/check-transform.mjs && yarn build:profile && playwright test && node scripts/report.mjs && node --test scripts/report.test.mjs",
+    "benchmark": "yarn fmt:check && yarn lint && node scripts/check-guard.mjs && node --test benchmark/capture.test.mjs scripts/report-evidence.test.mjs && yarn typecheck && node scripts/run-benchmark.mjs && node scripts/report.mjs && node --test scripts/report.test.mjs",
+    "benchmark:all": "yarn benchmark && yarn benchmark:row-memo && node scripts/report.mjs --require-ablation && node --test scripts/report.test.mjs",
     "benchmark:trace": "BENCHMARK_TRACE=1 yarn benchmark",
+    "build:row-memo": "ROW_MEMO_ABLATION=on yarn workspace @experiment/manual build && ROW_MEMO_ABLATION=off yarn workspace @experiment/manual build && ROW_MEMO_ABLATION=on yarn workspace @experiment/manual build:profile && ROW_MEMO_ABLATION=off yarn workspace @experiment/manual build:profile",
+    "typecheck:row-memo": "tsc --noEmit --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --jsx react-jsx --strict --skipLibCheck --types node,vite/client playwright.ablation.config.ts benchmark/row-ablation.spec.ts benchmark/row-ablation-order.ts",
+    "benchmark:row-memo": "yarn fmt:check && yarn lint && node --test scripts/row-ablation-build.test.mjs scripts/row-ablation.test.mjs benchmark/row-ablation-order.test.mjs && yarn typecheck && yarn typecheck:row-memo && yarn build:row-memo && playwright test --config playwright.ablation.config.ts && node scripts/report-row-ablation.mjs && node --test scripts/row-ablation-report.test.mjs",
     "analyze:compiler": "react-compiler-analyzer analyze apps/compiler/src shared benchmark/recorder.tsx --format json"
   },
   "devDependencies": {

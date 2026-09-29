@@ -1,11 +1,34 @@
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { diffLines } from "diff";
 import { Marked, Renderer } from "marked";
 import { parse, serialize } from "parse5";
+import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
+import { ablationFiles, loadAblationEvidence } from "./report-evidence.mjs";
 
 const output = "dist-pages";
+const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
+validateProvenance(report.provenance, "benchmark/results");
+assert.deepEqual(
+  report.rowMemo,
+  loadAblationEvidence(report),
+  "Ablation evidence changed since reporting; regenerate the main comparison before publishing",
+);
+for (const app of ["compiler", "manual"]) {
+  const captured = `sources/${app}-App.js`;
+  const expected = report.provenance.builds[app].production["./sources/App.js"];
+  assert.equal(
+    hashFiles("benchmark/results", [captured])[captured],
+    expected,
+    "Captured source snapshot changed",
+  );
+  assert.equal(
+    hashFiles(`apps/${app}/dist`, ["sources/App.js"])["sources/App.js"],
+    expected,
+    "Pages source snapshot differs from measured output",
+  );
+}
 for (const app of ["compiler", "manual", "baseline"]) {
   const html = readFileSync(`apps/${app}/dist/index.html`, "utf8");
   assert.ok(
@@ -138,7 +161,6 @@ analyzerHead.childNodes.push({
 writeFileSync(`${analyzerDirectory}/index.html`, serialize(analyzerDocument));
 const reportDirectory = `${output}/report`;
 mkdirSync(reportDirectory, { recursive: true });
-const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
 assert.ok(report.evaluation?.recommendation, "Benchmark comparison is missing its evaluation");
 const defaultTable = Renderer.prototype.table;
 const markdown = new Marked({ gfm: true });
@@ -151,8 +173,12 @@ markdown.use({
 });
 const artifacts = [
   "measurements.json",
+  "provenance.json",
   "comparison.md",
   "comparison.json",
+  "lighthouse.json",
+  "sources/compiler-App.js",
+  "sources/manual-App.js",
   "slowdown.json",
   "selection-latency.json",
   ...["compiler", "manual", "baseline"].flatMap((app) => [
@@ -161,8 +187,15 @@ const artifacts = [
     `lighthouse-${app}.json`,
   ]),
 ];
+mkdirSync(`${reportDirectory}/sources`, { recursive: true });
 for (const artifact of artifacts)
   cpSync(`benchmark/results/${artifact}`, `${reportDirectory}/${artifact}`);
+rmSync(`${reportDirectory}/row-memo`, { recursive: true, force: true });
+if (report.rowMemo.status === "available") {
+  mkdirSync(`${reportDirectory}/row-memo`, { recursive: true });
+  for (const artifact of ablationFiles)
+    cpSync(`benchmark/results/row-memo/${artifact}`, `${reportDirectory}/row-memo/${artifact}`);
+}
 const runId = process.env.BENCHMARK_RUN_ID;
 const commit = process.env.BENCHMARK_SHA?.slice(0, 7);
 const runUrl = runId
@@ -175,7 +208,7 @@ writeFileSync(
   <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="theme-color" content="#f6f8f8" /><title>Benchmark comparison / Signal</title><link rel="stylesheet" href="../styles.css" /><link rel="stylesheet" href="../report.css" /></head>
   <body class="report-page">
     <header class="site-header"><div class="brand"><span class="brand-mark" aria-hidden="true">S<span>.</span></span><span class="brand-name">signal<span>.</span></span><span class="brand-divider" aria-hidden="true"></span><span class="brand-context">benchmark comparison</span></div><a class="source-link" href="../">All implementations <span aria-hidden="true">↗</span></a></header>
-    <main class="report-main"><div class="report-topline"><span class="eyebrow"><span class="live-dot" aria-hidden="true"></span> LATEST SUCCESSFUL BENCHMARK</span>${runUrl ? `<a href="${runUrl}">CI run ${runId}${commit ? ` · ${commit}` : ""} ↗</a>` : "<span>Local benchmark preview</span>"}</div><article class="report-body">${markdown.parse(readFileSync("benchmark/results/comparison.md", "utf8"))}</article><footer><span>PRODUCTION BUILD MEASUREMENTS · REACT 19</span><a href="../">ALL IMPLEMENTATIONS ↑</a></footer></main>
+    <main class="report-main"><div class="report-topline"><span class="eyebrow"><span class="live-dot" aria-hidden="true"></span> LATEST SUCCESSFUL BENCHMARK</span>${runUrl ? `<a href="${runUrl}">CI run ${runId}${commit ? ` · ${commit}` : ""} ↗</a>` : "<span>Local benchmark preview</span>"}</div><article class="report-body"><p><a href="../sources/compiler-manual-App.html">Compare compiled sources</a></p>${markdown.parse(readFileSync("benchmark/results/comparison.md", "utf8"))}</article><footer><span>PRODUCTION BUILD MEASUREMENTS · REACT 19</span><a href="../">ALL IMPLEMENTATIONS ↑</a></footer></main>
   </body>
 </html>`,
 );

@@ -200,7 +200,42 @@ if (preview) {
         await page.getByText(report.evaluation.recommendation, { exact: true }).count(),
         1,
       );
-      assert.equal(await page.locator("article table").count(), 7);
+      assert.equal(
+        await page.locator("article table").count(),
+        report.rowMemo.status === "available" ? 8 : 7,
+      );
+      assert.doesNotMatch(
+        await page.locator("article").innerText(),
+        /schema(?:[ -]?version)?[ :]*v?2/i,
+      );
+      assert.equal(
+        await page
+          .getByRole("heading", { name: "Why equal row counts do not mean equal work" })
+          .count(),
+        1,
+      );
+      assert.equal(
+        await page
+          .getByRole("columnheader", { name: "Row render-work events (C / M / B)", exact: true })
+          .count(),
+        1,
+      );
+      for (const link of await page.locator("article a").all()) {
+        const href = await link.getAttribute("href");
+        assert.equal(
+          (await page.request.get(new URL(href, page.url()).href)).status(),
+          200,
+          `Broken report link: ${href}`,
+        );
+      }
+      if (report.rowCaching.status === "recognized") {
+        await page.getByText("Inspect the generated cache boundaries", { exact: true }).click();
+        assert.equal(await page.locator("article pre").count(), 3);
+        assert.ok(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          `${name} expanded code excerpts overflow`,
+        );
+      }
       const measurementResponse = await page.request.get(
         new URL("report/measurements.json", base).href,
       );
@@ -257,6 +292,30 @@ if (preview) {
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         `${name} report overflows horizontally`,
       );
+      if (report.rowMemo.status === "available") {
+        await page.getByRole("link", { name: "Full row-memo report" }).click();
+        assert.equal(new URL(page.url()).pathname, `${prefix}report/row-memo/report.html`);
+        assert.equal(
+          await page
+            .getByRole("heading", { name: "Manual row memo ablation", exact: true })
+            .count(),
+          1,
+        );
+        assert.equal(await page.locator("table").count(), 3);
+        const raw = await page.request.get(new URL("measurements.json", page.url()).href);
+        assert.equal(raw.status(), 200);
+        assert.equal((await raw.json()).sourceFingerprint, report.provenance.sourceFingerprint);
+        assert.ok(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          `${name} ablation report overflows`,
+        );
+      } else {
+        assert.equal(await page.getByText(/Ablation unavailable for this build/).count(), 1);
+        assert.equal(
+          (await page.request.get(new URL("report/row-memo/report.html", base).href)).status(),
+          404,
+        );
+      }
       assert.deepEqual(errors, [], `${name} browser errors`);
       await page.close();
     }

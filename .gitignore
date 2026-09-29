@@ -17,6 +17,7 @@ node_modules
 .pnp.*
 apps/*/dist/
 apps/*/dist-profile/
+apps/manual/dist-ablation/
 benchmark/results/
 playwright-report/
 test-results/
