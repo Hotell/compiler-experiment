@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { readFileSync, mkdirSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import { chromium } from "@playwright/test";
+import { checkDevtools } from "./check-devtools.mjs";
 
 const root = resolve("dist-pages");
 const prefix = "/compiler-experiment/";
@@ -73,6 +74,12 @@ if (preview) {
       const page = await browser.newPage({ viewport: { width, height } });
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
+      const failedResources = [];
+      page.on("requestfailed", (request) => failedResources.push(request.url()));
+      page.on("response", (response) => {
+        if (response.status() >= 400)
+          failedResources.push(`${response.status()} ${response.url()}`);
+      });
       for (const app of ["compiler", "manual", "baseline"]) {
         const home = await page.goto(base);
         assert.equal(home.status(), 200);
@@ -116,6 +123,12 @@ if (preview) {
             .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
           ["./sources/", "./sources/compiler-manual-App.html", "./sources/"],
         );
+        assert.deepEqual(
+          await page
+            .getByRole("link", { name: "Open with Profiler" })
+            .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+          ["./profile/baseline/", "./profile/manual/", "./profile/compiler/"],
+        );
         assert.equal(await page.getByText(/Compiler (on|off)/).count(), 0);
         assert.ok(
           (await page.locator(".route").first().boundingBox()).height <=
@@ -134,7 +147,102 @@ if (preview) {
         assert.equal(new URL(page.url()).pathname, `${prefix}${app}/`);
         await page.getByRole("heading", { name: "Incident triage" }).waitFor();
         assert.equal(await page.getByRole("row").count(), 201, `${app} incidents must render`);
+        const normalScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+        assert.equal(
+          await page.evaluate(() => window.__benchmark),
+          undefined,
+          `${app} normal build must omit the recorder`,
+        );
+        assert.equal(await page.locator(".profile-banner").count(), 0);
+        await page.goto(base);
+        await page.locator(`.route-extra a[href="./profile/${app}/"]`).click();
+        assert.equal(new URL(page.url()).pathname, `${prefix}profile/${app}/`);
+        await page.getByRole("heading", { name: "Incident triage" }).waitFor();
+        assert.equal(
+          await page.getByRole("row").count(),
+          201,
+          `${app} profiling incidents must render`,
+        );
+        assert.match(await page.title(), /Profiling enabled/);
+        assert.equal(await page.getByText("Profiling enabled", { exact: true }).count(), 1);
+        assert.equal(
+          await page.locator("#root .profile-banner").count(),
+          0,
+          "Profile banner must stay outside the React tree",
+        );
+        assert.equal(
+          await page.evaluate(() => window.__REACT_DEVTOOLS_GLOBAL_HOOK__),
+          undefined,
+          "Hosted app must not install or replace the visitor's DevTools hook",
+        );
+        assert.equal(
+          await page.evaluate(() => window.__fiberBenchmark),
+          undefined,
+          "The benchmark's private fiber probe must not ship",
+        );
+        await page.getByText("How to profile", { exact: true }).click();
+        assert.deepEqual(
+          await page
+            .locator(".profile-banner")
+            .evaluate((banner) =>
+              [...banner.querySelectorAll("*")]
+                .filter(
+                  (element) =>
+                    element.getClientRects().length &&
+                    parseFloat(getComputedStyle(element).fontSize) < 16,
+                )
+                .map((element) => element.textContent),
+            ),
+          [],
+          `${name} profiling instructions must remain readable`,
+        );
+        const mounts = await page.evaluate(() => {
+          window.__benchmark.assertComplete();
+          const records = window.__benchmark.records;
+          window.__benchmark.clear();
+          return records;
+        });
+        assert.ok(mounts.some((record) => record.id === "root" && record.phase === "mount"));
+        await page.getByRole("button", { name: "Open INC-0001", exact: true }).click();
+        await page.getByRole("dialog", { name: "Incident detail" }).waitFor();
+        await page.getByRole("button", { name: "Close detail" }).click();
+        await page.getByRole("button", { name: "Favorite INC-0001", exact: true }).click();
+        await page.getByRole("button", { name: "Unfavorite INC-0001", exact: true }).waitFor();
+        const updates = await page.evaluate(() => {
+          window.__benchmark.assertComplete();
+          return window.__benchmark.records;
+        });
+        assert.ok(updates.filter((record) => record.id === "root").length >= 3);
+        for (const record of [...mounts, ...updates]) {
+          assert.ok(Number.isFinite(record.actualDuration) && record.actualDuration >= 0);
+          assert.ok(Number.isFinite(record.baseDuration) && record.baseDuration >= 0);
+        }
+        assert.ok(
+          (await page.evaluate(() => document.documentElement.scrollWidth)) <= normalScrollWidth,
+          `${name} ${app} profiling UI must not increase the app's existing horizontal overflow`,
+        );
+        assert.ok(
+          await page
+            .locator(".profile-banner")
+            .evaluate((banner) => banner.scrollWidth <= banner.clientWidth),
+          `${name} ${app} profiling banner overflows`,
+        );
+        await page.evaluate(() => window.__benchmark.clear());
+        assert.equal(await page.evaluate(() => window.__benchmark.records.length), 0);
+        await page.getByRole("link", { name: "Open normal build", exact: true }).click();
+        assert.equal(new URL(page.url()).pathname, `${prefix}${app}/`);
+        await page.getByRole("heading", { name: "Incident triage" }).waitFor();
+        assert.equal(await page.evaluate(() => window.__benchmark), undefined);
+        await page.goto(new URL(`profile/${app}/`, base).href);
+        await page.getByRole("link", { name: "All implementations", exact: true }).click();
+        assert.equal(page.url(), base);
       }
+      await page.getByText("How to profile these apps", { exact: true }).click();
+      assert.deepEqual(await undersizedText(page), [], `${name} profiling help text is below 16px`);
+      assert.ok(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        `${name} expanded profiling help overflows`,
+      );
       await page.goto(base);
       await page.getByRole("link", { name: "Analyzer report" }).click();
       assert.equal(new URL(page.url()).pathname, `${prefix}analyzer/`);
@@ -199,6 +307,13 @@ if (preview) {
       assert.equal(
         await page.getByText(report.evaluation.recommendation, { exact: true }).count(),
         1,
+      );
+      assert.deepEqual(
+        await page
+          .getByRole("navigation", { name: "Try profiling these apps" })
+          .getByRole("link")
+          .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+        ["../profile/compiler/", "../profile/manual/", "../profile/baseline/"],
       );
       assert.equal(
         await page.locator("article table").count(),
@@ -317,10 +432,12 @@ if (preview) {
         );
       }
       assert.deepEqual(errors, [], `${name} browser errors`);
+      assert.deepEqual(failedResources, [], `${name} resource failures`);
       await page.close();
     }
+    await checkDevtools(browser, base);
     console.log(
-      "Pages chooser, source comparison, analyzer and benchmark reports, and all three apps passed desktop/mobile navigation checks.",
+      "Pages chooser, source comparison, analyzer and benchmark reports, and all six app routes passed desktop/mobile navigation checks.",
     );
   } finally {
     await browser.close();

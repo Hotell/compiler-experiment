@@ -70,6 +70,7 @@
             </div>
           </a>
           <div class="route-extra">
+            <a href="./profile/baseline/">Open with Profiler <span aria-hidden="true">↗</span></a>
             <a href="./sources/">Compare output <span aria-hidden="true">↗</span></a>
           </div>
         </article>
@@ -87,6 +88,7 @@
             </div>
           </a>
           <div class="route-extra">
+            <a href="./profile/manual/">Open with Profiler <span aria-hidden="true">↗</span></a>
             <a href="./sources/compiler-manual-App.html"
               >Compare output <span aria-hidden="true">↗</span></a
             >
@@ -106,11 +108,30 @@
             </div>
           </a>
           <div class="route-extra">
+            <a href="./profile/compiler/">Open with Profiler <span aria-hidden="true">↗</span></a>
             <a href="./analyzer/">Analyzer report <span aria-hidden="true">↗</span></a>
             <a href="./sources/">Compare output <span aria-hidden="true">↗</span></a>
           </div>
         </article>
       </div>
+      <details class="profiling-help">
+        <summary>How to profile these apps</summary>
+        <p>
+          Open a profiling build, install the React DevTools browser extension, and open its
+          Profiler tab. Start recording, select or favorite an incident, then stop recording.
+        </p>
+        <p>
+          These are production builds with profiling enabled, not development builds. Profiling adds
+          overhead: use them for diagnosis, not the published bundle-size or latency comparison. The
+          normal app links above remain uninstrumented.
+        </p>
+        <p>
+          Without the extension, our callback records are available in the browser console as
+          <code>window.__benchmark.records</code>, including <code>actualDuration</code> and
+          <code>baseDuration</code>. Use <code>window.__benchmark.clear()</code> between recordings
+          to discard accumulated samples. Nothing is uploaded.
+        </p>
+      </details>
       <footer>
         <span>IDENTICAL DATASET · MATCHED INTERACTIONS</span
         ><span>VITE / REACT 19 / TYPESCRIPT</span>

@@ -18,6 +18,24 @@ yarn preview:pages  # http://127.0.0.1:4180/compiler-experiment/
 
 Keep the preview command running while browsing. The local report is labeled as a preview; CI deployments link to the successful benchmark run. `node scripts/check-pages.mjs` tests the same assembled site without leaving a server running. `dist-pages` and benchmark results are generated and ignored.
 
+### Production profiling apps
+
+Each chooser card has an **Open with Profiler** link, and the report links to all three production-profiling copies:
+
+| Implementation     | Profiling URL                                                  |
+| ------------------ | -------------------------------------------------------------- |
+| React Compiler     | https://hotell.github.io/compiler-experiment/profile/compiler/ |
+| Manual memoization | https://hotell.github.io/compiler-experiment/profile/manual/   |
+| No memoization     | https://hotell.github.io/compiler-experiment/profile/baseline/ |
+
+Install the React DevTools browser extension, open its **Profiler** tab, start recording, interact with the app, then stop recording. These use `react-dom/profiling` in production mode, not a development build. Our callback recorder also works without the extension: inspect `window.__benchmark.records` in the console for `actualDuration` and `baseDuration`, and call `window.__benchmark.clear()` between recordings to discard accumulated samples. Records stay in the browser; no telemetry is uploaded.
+
+The profiling banner and navigation live outside the React root. They identify the implementation, link back to the chooser and normal build, and explain the overhead. Normal links, bundle-size measurements, production timing workloads and optimization strategies remain unchanged. Profiling pages are diagnostic tools, not additional benchmark arms or replacements for the uninstrumented apps.
+
+`yarn build:pages:profile` builds the three hosted profiling outputs with their own `PAGES_BASE` values into `apps/*/dist-profile-pages/`; it leaves the benchmark's `dist-profile` directories untouched. `yarn build:pages` includes this step and assembles them under `dist-pages/profile/{compiler,manual,baseline}/`. The existing successful-benchmark Pages workflow uploads all six app routes together from the benchmarked commit. The same routes are available under the local Pages preview.
+
+Pages checks verify links and assets, desktop/mobile interaction, finite actual/base callbacks, and the absence of profiling instrumentation in normal builds. They also inject the pinned `react-devtools-inline` **backend into test browser contexts only**, start and stop real DevTools profiling, and retrieve component-level commit data for all three profiling apps with a normal-build negative control. The DevTools backend is a development dependency, never part of the hosted apps; the browser-extension UI is not bundled or driven by these checks.
+
 ## Run locally
 
 Requires Node >=22.12 and Corepack. From the repository root:

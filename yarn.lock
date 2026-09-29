@@ -468,6 +468,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@jridgewell/sourcemap-codec@npm:1.5.5":
+  version: 1.5.5
+  resolution: "@jridgewell/sourcemap-codec@npm:1.5.5"
+  checksum: 10c0/f9e538f302b63c0ebc06eecb1dd9918dd4289ed36147a0ddce35d6ea4d7ebbda243cda7b2213b6a5e1d8087a298d5cf630fb2bd39329cdecb82017023f6081a0
+  languageName: node
+  linkType: hard
+
 "@jridgewell/sourcemap-codec@npm:^1.4.14, @jridgewell/sourcemap-codec@npm:^1.5.0":
   version: 1.6.0
   resolution: "@jridgewell/sourcemap-codec@npm:1.6.0"
@@ -1984,6 +1991,7 @@ __metadata:
     oxlint: "npm:1.85.0"
     parse5: "npm:^8.0.1"
     react: "npm:19.3.0"
+    react-devtools-inline: "npm:8.0.0"
     react-dom: "npm:19.3.0"
     typescript: "npm:5.9.3"
     vite: "npm:8.3.0"
@@ -3369,6 +3377,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-devtools-inline@npm:8.0.0":
+  version: 8.0.0
+  resolution: "react-devtools-inline@npm:8.0.0"
+  dependencies:
+    "@jridgewell/sourcemap-codec": "npm:1.5.5"
+    source-map-js: "npm:^0.6.2"
+  checksum: 10c0/19e06345ab72a6434a051411a3b98317ba1eef7efd61f1993b2fbd807c7c95da00b35618ad51ca4c538bebd0de956d04dc9dbc82d338858a33ad8783548f8cf5
+  languageName: node
+  linkType: hard
+
 "react-dom@npm:19.3.0":
   version: 19.3.0
   resolution: "react-dom@npm:19.3.0"
@@ -3562,6 +3580,13 @@ __metadata:
     ip-address: "npm:^10.1.1"
     smart-buffer: "npm:^4.2.0"
   checksum: 10c0/9ac7f4329ed064585975206d9582119a1f168b249dd6119a939f839e0ea7a590d4fdccff9a4112f13b478177207959096f70224f021eaeb3ce69bc8129f80ef4
+  languageName: node
+  linkType: hard
+
+"source-map-js@npm:^0.6.2":
+  version: 0.6.2
+  resolution: "source-map-js@npm:0.6.2"
+  checksum: 10c0/75c147e3db6fe45d0ade3e04e837aec07c4d17165e7069fa5dcc9c5c47c66c53556783d631829ef78541a00ba59e6048683e770af9cc1dcb5dabdeb32f85eaf1
   languageName: node
   linkType: hard
 

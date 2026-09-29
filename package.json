@@ -11,7 +11,8 @@
     "lint": "oxlint apps shared benchmark scripts --ignore-pattern 'benchmark/fixtures/**'",
     "typecheck": "yarn workspace @experiment/compiler typecheck && yarn workspace @experiment/manual typecheck && yarn workspace @experiment/baseline typecheck",
     "build": "yarn workspace @experiment/compiler build && yarn workspace @experiment/manual build && yarn workspace @experiment/baseline build",
-    "build:pages": "PAGES_BASE=/compiler-experiment/compiler/ yarn workspace @experiment/compiler build && PAGES_BASE=/compiler-experiment/manual/ yarn workspace @experiment/manual build && PAGES_BASE=/compiler-experiment/baseline/ yarn workspace @experiment/baseline build && node scripts/assemble-pages.mjs",
+    "build:pages": "PAGES_BASE=/compiler-experiment/compiler/ yarn workspace @experiment/compiler build && PAGES_BASE=/compiler-experiment/manual/ yarn workspace @experiment/manual build && PAGES_BASE=/compiler-experiment/baseline/ yarn workspace @experiment/baseline build && yarn build:pages:profile && node scripts/assemble-pages.mjs",
+    "build:pages:profile": "PAGES_BASE=/compiler-experiment/profile/compiler/ yarn workspace @experiment/compiler build:profile --outDir dist-profile-pages && PAGES_BASE=/compiler-experiment/profile/manual/ yarn workspace @experiment/manual build:profile --outDir dist-profile-pages && PAGES_BASE=/compiler-experiment/profile/baseline/ yarn workspace @experiment/baseline build:profile --outDir dist-profile-pages",
     "preview:pages": "node scripts/check-pages.mjs --serve",
     "build:profile": "yarn workspace @experiment/compiler build:profile && yarn workspace @experiment/manual build:profile && yarn workspace @experiment/baseline build:profile",
     "benchmark": "yarn fmt:check && yarn lint && node scripts/check-guard.mjs && node --test benchmark/capture.test.mjs scripts/report-evidence.test.mjs && yarn typecheck && node scripts/run-benchmark.mjs && node scripts/report.mjs && node --test scripts/report.test.mjs",
@@ -40,6 +41,7 @@
     "oxlint": "1.85.0",
     "parse5": "^8.0.1",
     "react": "19.3.0",
+    "react-devtools-inline": "8.0.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3",
     "vite": "8.3.0"

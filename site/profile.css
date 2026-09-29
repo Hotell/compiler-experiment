@@ -1,0 +1,43 @@
+.profile-banner {
+  padding: 16px clamp(20px, 4vw, 48px);
+  border-bottom: 2px solid #19786b;
+  background: #eaf4f0;
+  color: #203a34;
+  font:
+    16px/1.6 "Avenir Next",
+    "Trebuchet MS",
+    sans-serif;
+}
+.profile-banner-heading,
+.profile-banner nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
+.profile-banner nav {
+  margin-top: 8px;
+}
+.profile-banner a {
+  color: #116253;
+  text-underline-offset: 3px;
+}
+.profile-banner a:focus-visible,
+.profile-banner summary:focus-visible {
+  outline: 2px solid #267d71;
+  outline-offset: 3px;
+}
+.profile-banner details {
+  margin-top: 8px;
+  max-width: 1000px;
+}
+.profile-banner summary {
+  cursor: pointer;
+}
+.profile-banner p {
+  margin: 8px 0 0;
+}
+.profile-banner code {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}

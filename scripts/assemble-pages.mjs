@@ -3,11 +3,16 @@ import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { diffLines } from "diff";
 import { Marked, Renderer } from "marked";
-import { parse, serialize } from "parse5";
+import { parse, parseFragment, serialize } from "parse5";
 import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
 import { ablationFiles, loadAblationEvidence } from "./report-evidence.mjs";
 
 const output = "dist-pages";
+const appLabels = {
+  compiler: "React Compiler",
+  manual: "Manual memoization",
+  baseline: "No memoization",
+};
 const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
 validateProvenance(report.provenance, "benchmark/results");
 assert.deepEqual(
@@ -35,6 +40,11 @@ for (const app of ["compiler", "manual", "baseline"]) {
     html.includes(`/compiler-experiment/${app}/assets/`),
     `${app} is not built for its Pages path`,
   );
+  const profile = readFileSync(`apps/${app}/dist-profile-pages/index.html`, "utf8");
+  assert.ok(
+    profile.includes(`/compiler-experiment/profile/${app}/assets/`),
+    `${app} is not built for its profiling Pages path`,
+  );
 }
 
 mkdirSync(output, { recursive: true });
@@ -44,6 +54,37 @@ for (const app of ["compiler", "manual", "baseline"]) {
     recursive: true,
     force: true,
   });
+  const profileDirectory = `${output}/profile/${app}`;
+  cpSync(`apps/${app}/dist-profile-pages`, profileDirectory, { recursive: true, force: true });
+  const document = parse(readFileSync(`${profileDirectory}/index.html`, "utf8"));
+  const html = document.childNodes.find((node) => node.nodeName === "html");
+  const head = html?.childNodes.find((node) => node.nodeName === "head");
+  const body = html?.childNodes.find((node) => node.nodeName === "body");
+  const title = head?.childNodes.find((node) => node.nodeName === "title");
+  assert.ok(head && body && title, `${app} profiling document is incomplete`);
+  title.childNodes = [
+    {
+      nodeName: "#text",
+      value: `Signal / ${appLabels[app]} / Profiling enabled`,
+      parentNode: title,
+    },
+  ];
+  const stylesheet = parseFragment('<link rel="stylesheet" href="../../profile.css">')
+    .childNodes[0];
+  stylesheet.parentNode = head;
+  head.childNodes.push(stylesheet);
+  const banner = parseFragment(`<aside class="profile-banner" aria-label="Profiling build">
+    <div class="profile-banner-heading"><strong>Profiling enabled</strong><span>${appLabels[app]}</span><span>Production build / diagnostic overhead</span></div>
+    <nav aria-label="Profiling navigation"><a href="../../">All implementations</a><a href="../../${app}/">Open normal build</a></nav>
+    <details><summary>How to profile</summary>
+      <p>Install the React DevTools browser extension and open its Profiler tab. Start recording, interact with the app, then stop recording.</p>
+      <p>Our callback records also remain available in the console as <code>window.__benchmark.records</code>, including <code>actualDuration</code> and <code>baseDuration</code>. Use <code>window.__benchmark.clear()</code> between recordings to discard accumulated samples. Nothing is uploaded.</p>
+      <p>Profiling adds overhead. These pages are for diagnosis, not the published production-size or latency comparison.</p>
+    </details>
+  </aside>`).childNodes[0];
+  banner.parentNode = body;
+  body.childNodes.unshift(banner);
+  writeFileSync(`${profileDirectory}/index.html`, serialize(document));
 }
 const modules = ["App", "providers", "controls", "incidents", "main", "recorder"];
 const pairs = [
@@ -163,9 +204,21 @@ const reportDirectory = `${output}/report`;
 mkdirSync(reportDirectory, { recursive: true });
 assert.ok(report.evaluation?.recommendation, "Benchmark comparison is missing its evaluation");
 const defaultTable = Renderer.prototype.table;
+const defaultHeading = Renderer.prototype.heading;
 const markdown = new Marked({ gfm: true });
 markdown.use({
   renderer: {
+    heading(token) {
+      const heading = defaultHeading.call(this, token);
+      if (token.depth !== 3 || token.text !== "Reading the Profiler durations") return heading;
+      return `${heading}<nav aria-label="Try profiling these apps"><p><strong>Try profiling these apps:</strong> ${Object.entries(
+        appLabels,
+      )
+        .map(([app, label]) => `<a href="../profile/${app}/">${label}</a>`)
+        .join(
+          " / ",
+        )}.</p><p>Open React DevTools, select its Profiler tab, and record an interaction. These production profiling builds include diagnostic overhead; normal builds remain the basis for the size and latency comparisons.</p></nav>`;
+    },
     table(token) {
       return `<div class="report-table-scroll">${defaultTable.call(this, token)}</div>`;
     },
@@ -213,4 +266,4 @@ writeFileSync(
 </html>`,
 );
 writeFileSync(`${output}/.nojekyll`, "");
-console.log(`Assembled ${output}/ with chooser, source comparison, report and three apps.`);
+console.log(`Assembled ${output}/ with chooser, source comparison, report and six app routes.`);

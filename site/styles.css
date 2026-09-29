@@ -237,6 +237,27 @@ h1 {
 .route-extra a:hover {
   text-decoration: underline;
 }
+.profiling-help {
+  margin-top: 24px;
+  padding: 18px 22px;
+  border: 1px solid #dfe7e5;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 16px;
+  line-height: 1.6;
+}
+.profiling-help summary {
+  color: #19786b;
+  font-weight: 800;
+  cursor: pointer;
+}
+.profiling-help p {
+  margin-top: 12px;
+}
+.profiling-help code {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
 .route-meta {
   display: flex;
   justify-content: space-between;
