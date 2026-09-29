@@ -1,20 +1,22 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { strict as assert } from "node:assert";
+import {
+  assertMeasurementsV2,
+  countProfileRecords,
+  median,
+  summarizeProfileSamples,
+  validateProfileRecords,
+} from "./profile-counts.mjs";
 
 const directory = "benchmark/results";
 const input = JSON.parse(readFileSync(`${directory}/measurements.json`, "utf8"));
+assertMeasurementsV2(input);
 const slowdown = JSON.parse(readFileSync(`${directory}/slowdown.json`, "utf8"));
 const selectionLatency = JSON.parse(readFileSync(`${directory}/selection-latency.json`, "utf8"));
 const audits = JSON.parse(readFileSync(`${directory}/lighthouse.json`, "utf8"));
 const packages = JSON.parse(readFileSync("package.json", "utf8"));
 const apps = ["compiler", "manual", "baseline"];
-const median = (numbers) => {
-  const sorted = [...numbers].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  if (!sorted.length) return null;
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-};
 const round = (value, digits = 1) => Number(value.toFixed(digits));
 const p90 = (numbers) =>
   [...numbers].sort((left, right) => left - right)[Math.ceil(numbers.length * 0.9) - 1];
@@ -133,40 +135,8 @@ function bundle(app) {
   };
 }
 
-function counts(records, fiberRenders) {
-  assert.ok(Array.isArray(fiberRenders), "Missing React fiber component-work records");
-  const updates = records.filter((record) => record.phase !== "mount");
-  const byId = (id) => updates.filter((record) => record.id === id);
-  const rows = updates.filter((record) => record.id.startsWith("row:"));
-  const queueItems = updates.filter((record) => record.id.startsWith("queue:"));
-  const openButtons = updates.filter((record) => record.id.startsWith("button:open:"));
-  const favoriteButtons = updates.filter((record) => record.id.startsWith("button:favorite:"));
-  const durations = (entries) =>
-    entries.length ? median(entries.map((entry) => entry.actualDuration)) : null;
-  return {
-    commits: new Set(updates.map((record) => record.commitTime)).size,
-    shell: byId("shell").length,
-    list: byId("list").length,
-    detail: byId("detail").length,
-    rows: rows.length,
-    rowRenders: fiberRenders.filter((id) => id.startsWith("row:")).length,
-    queueRenders: fiberRenders.filter((id) => id.startsWith("queue:")).length,
-    openButtonRenders: fiberRenders.filter((id) => id.startsWith("button:open:")).length,
-    favoriteButtonRenders: fiberRenders.filter((id) => id.startsWith("button:favorite:")).length,
-    queueItems: queueItems.length,
-    openButtons: openButtons.length,
-    favoriteButtons: favoriteButtons.length,
-    affectedRows: [...new Set(rows.map((record) => record.id.slice(4)))].sort(),
-    durationMs: {
-      shell: durations(byId("shell")),
-      list: durations(byId("list")),
-      detail: durations(byId("detail")),
-      rows: durations(rows),
-    },
-  };
-}
-
 const report = {
+  schemaVersion: 2,
   versions: {
     node: process.version,
     playwrightChromium: input.browser,
@@ -178,7 +148,7 @@ const report = {
     lighthouse: audits.repetitions[0].compiler.version,
   },
   workload:
-    "200 deterministic incidents; isolated Chromium contexts; one warm-up; 3 repetitions alternating app order; mounts excluded from updates",
+    "200 deterministic incidents; isolated Chromium contexts; one warm-up; 3 repetitions alternating app order; initial mounts outside actions, action mounts reported separately from updates",
   bundles: Object.fromEntries(apps.map((app) => [app, bundle(app)])),
   actions: {},
   load: {},
@@ -193,38 +163,21 @@ for (const app of apps) {
     runs.every((run) => run.mounts > 0),
     `${app} recorder did not capture mounts`,
   );
+  for (const run of runs) {
+    assert.deepEqual(
+      run.actions.map((action) => action.name),
+      runs[0].actions.map((action) => action.name),
+      `${app} action names/order differ across repetitions`,
+    );
+    validateProfileRecords(run.actions.flatMap((action) => action.records));
+  }
   report.actions[app] = runs[0].actions.map((action, index) => {
     const samples = runs.map((run) =>
-      counts(run.actions[index].records, run.actions[index].fiberRenders),
+      countProfileRecords(run.actions[index].records, run.actions[index].fiberRenders),
     );
     return {
       name: action.name,
-      ...Object.fromEntries(
-        [
-          "commits",
-          "shell",
-          "list",
-          "detail",
-          "rows",
-          "rowRenders",
-          "queueRenders",
-          "openButtonRenders",
-          "favoriteButtonRenders",
-          "queueItems",
-          "openButtons",
-          "favoriteButtons",
-        ].map((key) => [key, median(samples.map((sample) => sample[key]))]),
-      ),
-      affectedRows: [...new Set(samples.flatMap((sample) => sample.affectedRows))].sort(),
-      medianDurationMs: Object.fromEntries(
-        ["shell", "list", "detail", "rows"].map((key) => [
-          key,
-          median(
-            samples.map((sample) => sample.durationMs[key]).filter((value) => value !== null),
-          ) ?? null,
-        ]),
-      ),
-      runs: samples,
+      ...summarizeProfileSamples(samples),
     };
   });
 }
@@ -456,7 +409,7 @@ const lines = [
   ]),
   "## Component work and committed updates (median of 3 runs)",
   "",
-  `C = compiler; M = manual; B = baseline. Row/queue/button columns count mounted-already components whose React ${report.versions.react} profiling fiber has the PerformedWork flag in a commit (a version-specific DevTools-like diagnostic). Only the whole-app commits column comes from React \`<Profiler>\` callbacks. Nested Profiler subtree callback counts remain separately in comparison.json: a callback does **not** prove its wrapped component function ran. Fewer component-work entries mean less render work, **not** necessarily lower latency. These are not additive counts or an API guaranteed across React releases.`,
+  `C = compiler; M = manual; B = baseline. Row/queue/button columns count mounted-already components whose React ${report.versions.react} profiling fiber has the PerformedWork flag in a completed commit (a version-specific DevTools-like diagnostic, not a complete function-invocation count). Only the whole-app commits column comes from the external root React \`<Profiler>\` callback. Nested Profiler subtree callback counts remain separately in comparison.json: a callback does **not** prove its wrapped component function ran or quantify its cost. These are not additive counts or an API guaranteed across React releases.`,
   "",
   "| Action | Whole-app commits (C / M / B) | Queue component work (C / M / B) | Row component work (C / M / B) | Open button work (C / M / B) | Favorite button work (C / M / B) | Row comparison |",
   "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
@@ -475,8 +428,20 @@ const lines = [
   "",
   "On queue switch, only the previously and newly selected queue items need to do work; the fiber diagnostic shows whether other queue item components also ran.",
   "",
-  `Whole-app commits group nested React \`<Profiler>\` callbacks by commitTime. Component-work counts instead use React ${report.versions.react}'s internal PerformedWork fiber flag and exclude mounts, including rows reappearing after a filter reset. They can differ from subtree callback counts; neither measure captures aborted renders or guarantees user-visible speedups.`,
-  "Median actualDuration values (ms) are advisory, include profiling overhead, and are available per action and subtree in comparison.json; never used as CI thresholds. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",
+  "Whole-app commits count exactly one external root callback per [rootId, rootGeneration, commitSequence], including any root mount inside an action. Initial-load mounts are outside action windows. Subtree mounts do not add root commits. Records require one root per commit, unique boundary IDs, matching commitTime within a commit and no ambiguous timestamp reuse within a root lifecycle; equal timestamps in different roots or root lifetimes are independent.",
+  `Component-work counts instead use React ${report.versions.react}'s internal PerformedWork fiber flag and exclude mounts, including rows reappearing after a filter reset. They can differ from subtree callback counts; neither measure captures aborted renders or guarantees user-visible speedups. Action capture waits for semantic outcomes and completed timing/diagnostic batches under this app's synchronous-workload contract, not arbitrary future asynchronous work. Search fill is bulk input; sort and reset is an aggregate workflow.`,
+  "",
+  "### Render durations and JSON fields (schema version 2)",
+  "",
+  "measurements.json and comparison.json use schemaVersion 2. Older measurements must be regenerated with yarn benchmark: the external boundaries now include their component bodies, so old and new durations are not interchangeable. Root includes App and provider render bodies; shell, toolbar, list, detail, rows, queue items and buttons are inclusive subtree measurements. Overlapping root/parent/child durations are never summed into a total or treated as component self-time.",
+  "",
+  "ACTUAL (actualDuration) is the render work React measured for the profiled subtree in that commit. BASE (baseDuration) is React's estimated full-subtree render cost, derived from the most recently measured render cost of each component; it is not a separately measured unoptimized run. It can retain costs from earlier renders and does not undo useMemo or compiler caching or reconstruct their uncached calculation costs. BASE minus ACTUAL is not measured savings, and neither duration is event-handler, layout, paint or end-to-end interaction time.",
+  "",
+  "In comparison.json, actions[app][i].commits is the median completed root-commit count across runs, and rootPhaseCounts preserves mount, update and nested-update separately. The root, shell, toolbar, list, detail, rows, queueItems, openButtons and favoriteButtons fields count non-mount callbacks (update plus nested-update), not function calls. rowRenders, queueRenders, openButtonRenders and favoriteButtonRenders retain the separate fiber-work counts. affectedRows lists distinct non-mount row IDs. The mounts object has the same boundary callback fields and affectedRows for action mounts only; root mounts are also reflected in rootPhaseCounts.mount.",
+  "",
+  "medianDurationMs (ACTUAL) and medianBaseDurationMs (BASE) each have root, shell, toolbar, list, detail, rows, queueItems, openButtons and favoriteButtons keys. Each is the median across observed per-run medians for non-mount callbacks, computed independently for actualDuration and baseDuration. mounts.medianDurationMs and mounts.medianBaseDurationMs summarize mount callbacks instead. runs retains each run's counts, rootPhaseCounts, durationMs, baseDurationMs and mounts (with its own durationMs and baseDurationMs). null means no matching callback was observed, while 0 is a measured zero; null runs are excluded from duration medians, never replaced with zero. Count and phase medians are computed field by field, so their medians need not add up. Raw phases, actualDuration, baseDuration, timestamps and root/commit/boundary lifecycle identities remain in [measurements.json](measurements.json).",
+  "",
+  "All Profiler durations are advisory milliseconds and include profiling overhead; they are never CI thresholds. Native profile-build measurements are separate from normal-build 4x CPU timings and browser sampling diagnostics. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",
   "",
 ];
 writeFileSync(`${directory}/comparison.md`, lines.join("\n"));

@@ -37,6 +37,7 @@ jobs:
           gh run download "$BENCHMARK_RUN_ID" --repo "$GITHUB_REPOSITORY" --name compiler-comparison --dir benchmark/results
           test -s benchmark/results/comparison.md
           test -s benchmark/results/comparison.json
+          test -s benchmark/results/measurements.json
           echo "BENCHMARK_RUN_ID=$BENCHMARK_RUN_ID" >> "$GITHUB_ENV"
           echo "BENCHMARK_SHA=$BENCHMARK_SHA" >> "$GITHUB_ENV"
       - run: yarn fmt:check && yarn lint && yarn typecheck

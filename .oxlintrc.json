@@ -15,7 +15,12 @@
   },
   "overrides": [
     {
-      "files": ["apps/compiler/src/**", "apps/baseline/src/**"],
+      "files": [
+        "apps/compiler/src/**",
+        "apps/baseline/src/**",
+        "shared/**",
+        "benchmark/recorder.tsx"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -31,9 +36,9 @@
         ],
         "no-restricted-properties": [
           "error",
-          { "object": "React", "property": "useMemo" },
-          { "object": "React", "property": "useCallback" },
-          { "object": "React", "property": "memo" }
+          { "property": "useMemo" },
+          { "property": "useCallback" },
+          { "property": "memo" }
         ]
       }
     }

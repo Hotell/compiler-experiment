@@ -32,6 +32,7 @@ jobs:
         with:
           name: compiler-comparison
           path: |
+            benchmark/results/measurements.json
             benchmark/results/comparison.json
             benchmark/results/comparison.md
             benchmark/results/favorite-*.svg

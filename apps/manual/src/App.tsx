@@ -1,12 +1,4 @@
-import {
-  memo,
-  Profiler,
-  useCallback,
-  useEffect,
-  useMemo,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, type KeyboardEvent } from "react";
 import {
   Activity,
   ArrowDownUp,
@@ -28,7 +20,7 @@ import {
   type Incident,
   type Queue,
 } from "../../../shared/incidents";
-import { onRender } from "../../../benchmark/recorder";
+import { Profiled } from "../../../benchmark/recorder";
 import { Button, Select, StatusBadge, TextInput } from "../../../shared/controls";
 import {
   FilterProvider,
@@ -44,16 +36,6 @@ import {
   useSelectionActions,
   useWorkspace,
 } from "./providers";
-
-function Profiled({ id, children }: { id: string; children: ReactNode }) {
-  return import.meta.env.MODE === "profile" ? (
-    <Profiler id={id} onRender={onRender}>
-      {children}
-    </Profiler>
-  ) : (
-    children
-  );
-}
 
 function Header() {
   const { reviews, addReview } = useReviews();
@@ -361,33 +343,31 @@ const IncidentRow = memo(function IncidentRow({
 function IncidentList({ incidents }: { incidents: Incident[] }) {
   const { selectedId } = useSelection();
   return (
-    <Profiled id="list">
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>INCIDENT</th>
-              <th>SERVICE</th>
-              <th>STATUS</th>
-              <th>SEVERITY</th>
-              <th>OWNER</th>
-              <th>TIME</th>
-              <th>
-                <span className="sr-only">Favorite</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {incidents.map((incident) => (
-              <Profiled key={incident.id} id={`row:${incident.id}`}>
-                <IncidentRow incident={incident} selected={selectedId === incident.id} />
-              </Profiled>
-            ))}
-          </tbody>
-        </table>
-        {incidents.length === 0 && <div className="empty">No incidents match your filters.</div>}
-      </div>
-    </Profiled>
+    <div className="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>INCIDENT</th>
+            <th>SERVICE</th>
+            <th>STATUS</th>
+            <th>SEVERITY</th>
+            <th>OWNER</th>
+            <th>TIME</th>
+            <th>
+              <span className="sr-only">Favorite</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {incidents.map((incident) => (
+            <Profiled key={incident.id} id={`row:${incident.id}`}>
+              <IncidentRow incident={incident} selected={selectedId === incident.id} />
+            </Profiled>
+          ))}
+        </tbody>
+      </table>
+      {incidents.length === 0 && <div className="empty">No incidents match your filters.</div>}
+    </div>
   );
 }
 const Detail = memo(function Detail() {
@@ -417,87 +397,85 @@ const Detail = memo(function Detail() {
     }
   }
   return (
-    <Profiled id="detail">
-      <dialog
-        open
-        className={`detail ${incident ? "detail-open" : ""}`}
-        aria-modal={incident && window.matchMedia("(max-width: 1050px)").matches ? true : undefined}
-        onKeyDown={onDetailKeyDown}
-        aria-label="Incident detail"
-      >
-        {incident ? (
-          <>
-            <div className="detail-head">
-              <Button className="back-button" onClick={closeDetail} aria-label="Close detail">
-                <ChevronLeft size={18} />
-              </Button>
-              <span>INCIDENT DETAILS</span>
-              <Button
-                className={`favorite ${incident.favorite ? "is-favorite" : ""}`}
-                aria-label={`${incident.favorite ? "Unfavorite" : "Favorite"} detail`}
-                onClick={() => toggleFavorite(incident.id)}
-              >
-                <Star size={17} fill={incident.favorite ? "currentColor" : "none"} />
-              </Button>
-            </div>
-            <div className="detail-body">
-              <span className="detail-id">{incident.id}</span>
-              <h2>{incident.title}</h2>
-              <StatusBadge status={incident.status} />
-              <div className="detail-section">
-                <h3>Overview</h3>
-                <dl>
-                  <div>
-                    <dt>Service</dt>
-                    <dd>{incident.service}</dd>
-                  </div>
-                  <div>
-                    <dt>Queue</dt>
-                    <dd>{incident.queue}</dd>
-                  </div>
-                  <div>
-                    <dt>Severity</dt>
-                    <dd>{incident.severity}</dd>
-                  </div>
-                  <div>
-                    <dt>Owner</dt>
-                    <dd>{incident.owner}</dd>
-                  </div>
-                  <div>
-                    <dt>Detected</dt>
-                    <dd>Today, {incident.time}</dd>
-                  </div>
-                </dl>
-              </div>
-              <div className="detail-section">
-                <h3>Activity</h3>
-                <ul className="activity-list">
-                  {incident.activity.map((entry, index) => (
-                    <li key={index}>
-                      {entry}
-                      <small>Today</small>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              {incident.status !== "Resolved" && (
-                <Button className="resolve-button" onClick={() => resolve(incident.id)}>
-                  <Check size={16} /> Mark resolved
-                </Button>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="detail-placeholder">
-            <span className="placeholder-icon">
-              <Activity size={24} />
-            </span>
-            <h2>No incident selected</h2>
-            <p>Select an incident from the list to view its details and activity.</p>
+    <dialog
+      open
+      className={`detail ${incident ? "detail-open" : ""}`}
+      aria-modal={incident && window.matchMedia("(max-width: 1050px)").matches ? true : undefined}
+      onKeyDown={onDetailKeyDown}
+      aria-label="Incident detail"
+    >
+      {incident ? (
+        <>
+          <div className="detail-head">
+            <Button className="back-button" onClick={closeDetail} aria-label="Close detail">
+              <ChevronLeft size={18} />
+            </Button>
+            <span>INCIDENT DETAILS</span>
+            <Button
+              className={`favorite ${incident.favorite ? "is-favorite" : ""}`}
+              aria-label={`${incident.favorite ? "Unfavorite" : "Favorite"} detail`}
+              onClick={() => toggleFavorite(incident.id)}
+            >
+              <Star size={17} fill={incident.favorite ? "currentColor" : "none"} />
+            </Button>
           </div>
-        )}
-      </dialog>
-    </Profiled>
+          <div className="detail-body">
+            <span className="detail-id">{incident.id}</span>
+            <h2>{incident.title}</h2>
+            <StatusBadge status={incident.status} />
+            <div className="detail-section">
+              <h3>Overview</h3>
+              <dl>
+                <div>
+                  <dt>Service</dt>
+                  <dd>{incident.service}</dd>
+                </div>
+                <div>
+                  <dt>Queue</dt>
+                  <dd>{incident.queue}</dd>
+                </div>
+                <div>
+                  <dt>Severity</dt>
+                  <dd>{incident.severity}</dd>
+                </div>
+                <div>
+                  <dt>Owner</dt>
+                  <dd>{incident.owner}</dd>
+                </div>
+                <div>
+                  <dt>Detected</dt>
+                  <dd>Today, {incident.time}</dd>
+                </div>
+              </dl>
+            </div>
+            <div className="detail-section">
+              <h3>Activity</h3>
+              <ul className="activity-list">
+                {incident.activity.map((entry, index) => (
+                  <li key={index}>
+                    {entry}
+                    <small>Today</small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {incident.status !== "Resolved" && (
+              <Button className="resolve-button" onClick={() => resolve(incident.id)}>
+                <Check size={16} /> Mark resolved
+              </Button>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="detail-placeholder">
+          <span className="placeholder-icon">
+            <Activity size={24} />
+          </span>
+          <h2>No incident selected</h2>
+          <p>Select an incident from the list to view its details and activity.</p>
+        </div>
+      )}
+    </dialog>
   );
 });
 function Shell() {
@@ -509,19 +487,23 @@ function Shell() {
     [incidents, queue, search, status, sort],
   );
   return (
-    <Profiled id="shell">
-      <div className="app">
-        <Header />
-        <div className="workspace">
-          <Sidebar />
-          <main className="main">
+    <div className="app">
+      <Header />
+      <div className="workspace">
+        <Sidebar />
+        <main className="main">
+          <Profiled id="toolbar">
             <Toolbar incidents={visible} />
+          </Profiled>
+          <Profiled id="list">
             <IncidentList incidents={visible} />
-          </main>
+          </Profiled>
+        </main>
+        <Profiled id="detail">
           <Detail />
-        </div>
+        </Profiled>
       </div>
-    </Profiled>
+    </div>
   );
 }
 export default function App() {
@@ -531,7 +513,9 @@ export default function App() {
         <FilterProvider>
           <SelectionProvider>
             <ReviewProvider>
-              <Shell />
+              <Profiled id="shell">
+                <Shell />
+              </Profiled>
             </ReviewProvider>
           </SelectionProvider>
         </FilterProvider>

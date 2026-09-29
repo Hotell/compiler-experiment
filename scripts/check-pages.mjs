@@ -201,6 +201,19 @@ if (preview) {
         1,
       );
       assert.equal(await page.locator("article table").count(), 7);
+      const measurementResponse = await page.request.get(
+        new URL("report/measurements.json", base).href,
+      );
+      assert.equal(measurementResponse.status(), 200);
+      const measurements = await measurementResponse.json();
+      assert.equal(measurements.schemaVersion, 2);
+      for (const app of ["compiler", "manual", "baseline"]) {
+        const records = measurements.repetitions[0][app].actions.flatMap(
+          (action) => action.records,
+        );
+        assert.ok(records.some((record) => record.id === "root"));
+        assert.ok(records.every((record) => Number.isFinite(record.baseDuration)));
+      }
       assert.deepEqual(await undersizedText(page), [], `${name} benchmark text is below 16px`);
       const reportFontSizes = await page.evaluate(() => ({
         paragraphs: [...document.querySelectorAll(".report-body p")].map((element) =>

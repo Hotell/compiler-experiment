@@ -2,10 +2,17 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 import { existsSync, readFileSync } from "node:fs";
 import { lexer } from "marked";
+import {
+  countProfileRecords,
+  summarizeProfileSamples,
+  validateProfileRecords,
+} from "./profile-counts.mjs";
+import "./profile-counts.test.mjs";
 
 test("comparison explains load, Lighthouse, CPU traces and the decision", () => {
   const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
   const markdown = readFileSync("benchmark/results/comparison.md", "utf8");
+  assert.equal(report.schemaVersion, 2);
   assert.equal(report.versions.react, "19.3.0");
   assert.match(markdown, /React 19\.3\.0 profiling fiber/);
   const tables = lexer(markdown, { gfm: true }).filter((token) => token.type === "table");
@@ -25,6 +32,13 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /Row component work \(C \/ M \/ B\)/);
   assert.match(markdown, /Queue component work \(C \/ M \/ B\)/);
   assert.match(markdown, /JS-active sampled time/);
+  assert.match(markdown, /BASE \(baseDuration\).*estimate/);
+  assert.match(markdown, /BASE minus ACTUAL is not measured savings/);
+  assert.match(markdown, /medianBaseDurationMs/);
+  assert.match(markdown, /null means no matching callback.*0 is a measured zero/);
+  assert.match(markdown, /Overlapping root\/parent\/child durations are never summed/);
+  assert.match(markdown, /\[rootId, rootGeneration, commitSequence\]/);
+  assert.match(markdown, /\[measurements\.json\]\(measurements\.json\)/);
   assert.ok(report.evaluation?.recommendation);
   assert.equal(
     report.evaluation.recommendation,
@@ -72,4 +86,48 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   }
   assert.match(markdown, /Open button work \(C \/ M \/ B\) \| Favorite button work/);
   assert.ok(Number.isFinite(report.baselineDeltas.compiler.total.gzip.bytes));
+});
+
+test("comparison preserves schema-v2 root phases and independent actual/base summaries", () => {
+  const input = JSON.parse(readFileSync("benchmark/results/measurements.json", "utf8"));
+  const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
+  assert.equal(input.schemaVersion, 2);
+  assert.equal(report.schemaVersion, 2);
+  const keys = [
+    "root",
+    "shell",
+    "toolbar",
+    "list",
+    "detail",
+    "rows",
+    "queueItems",
+    "openButtons",
+    "favoriteButtons",
+  ];
+  for (const app of ["compiler", "manual", "baseline"]) {
+    for (const repetition of input.repetitions) {
+      validateProfileRecords(repetition[app].actions.flatMap((action) => action.records));
+    }
+    assert.equal(report.actions[app].length, input.repetitions[0][app].actions.length);
+    for (const [index, action] of report.actions[app].entries()) {
+      const samples = input.repetitions.map((repetition) => {
+        const raw = repetition[app].actions[index];
+        assert.equal(action.name, raw.name);
+        return countProfileRecords(raw.records, raw.fiberRenders);
+      });
+      assert.deepEqual(action, { name: action.name, ...summarizeProfileSamples(samples) });
+      for (const summary of [action, action.mounts]) {
+        assert.deepEqual(Object.keys(summary.medianDurationMs), keys);
+        assert.deepEqual(Object.keys(summary.medianBaseDurationMs), keys);
+      }
+      for (const run of action.runs) {
+        assert.equal(
+          run.commits,
+          Object.values(run.rootPhaseCounts).reduce((sum, count) => sum + count, 0),
+        );
+        assert.equal(run.root, run.rootPhaseCounts.update + run.rootPhaseCounts["nested-update"]);
+        assert.equal(run.mounts.root, run.rootPhaseCounts.mount);
+      }
+    }
+  }
 });

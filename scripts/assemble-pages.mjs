@@ -150,6 +150,7 @@ markdown.use({
   },
 });
 const artifacts = [
+  "measurements.json",
   "comparison.md",
   "comparison.json",
   "slowdown.json",
