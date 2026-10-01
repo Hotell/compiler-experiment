@@ -4,6 +4,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { checkDevtools } from "./check-devtools.mjs";
+import { analyzeLoadMemory } from "./load-memory.mjs";
 
 const root = resolve("dist-pages");
 const prefix = "/compiler-experiment/";
@@ -317,7 +318,19 @@ if (preview) {
       );
       assert.equal(
         await page.locator("article table").count(),
-        report.rowMemo.status === "available" ? 8 : 7,
+        report.rowMemo.status === "available" ? 9 : 8,
+      );
+      assert.equal(
+        await page
+          .getByRole("heading", { name: "Load memory (normal production builds)", exact: true })
+          .count(),
+        1,
+      );
+      const memoryResponse = await page.request.get(new URL("report/load-memory.json", base).href);
+      assert.equal(memoryResponse.status(), 200);
+      assert.deepEqual(
+        analyzeLoadMemory(await memoryResponse.json(), report.versions.playwrightChromium),
+        report.loadMemory,
       );
       assert.doesNotMatch(
         await page.locator("article").innerText(),

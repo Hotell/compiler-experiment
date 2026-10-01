@@ -16,6 +16,7 @@ import {
   selectionEvidence,
 } from "./report-evidence.mjs";
 import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
+import { analyzeLoadMemory, loadMemoryMarkdown } from "./load-memory.mjs";
 
 test("comparison explains load, Lighthouse, CPU traces and the decision", () => {
   const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
@@ -26,7 +27,7 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   const tables = lexer(markdown, { gfm: true }).filter((token) => token.type === "table");
   assert.equal(
     tables.length,
-    report.rowMemo.status === "available" ? 8 : 7,
+    report.rowMemo.status === "available" ? 9 : 8,
     "all comparison tables must render as GFM tables",
   );
   for (const table of tables) {
@@ -39,6 +40,7 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /## Lighthouse/);
   assert.match(markdown, /## CPU slowdown/);
   assert.match(markdown, /## Post-GC JS heap/);
+  assert.match(markdown, /## Load memory \(normal production builds\)/);
   assert.match(markdown, /raw \/ gzip \(kB\)/);
   const initialBytes = markdown
     .split("## Initial-load production bytes")[1]
@@ -98,6 +100,30 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   }
   assert.match(markdown, /Open-button events \(C \/ M \/ B\) \| Favorite-button events/);
   assert.ok(Number.isFinite(report.baselineDeltas.compiler.total.gzip.bytes));
+});
+
+test("load-memory report preserves both CDP heap counters, phases, runs and relative differences", () => {
+  const raw = JSON.parse(readFileSync("benchmark/results/load-memory.json", "utf8"));
+  const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
+  const markdown = readFileSync("benchmark/results/comparison.md", "utf8");
+  assert.deepEqual(report.loadMemory, analyzeLoadMemory(raw, report.versions.playwrightChromium));
+  assert.ok(markdown.includes(loadMemoryMarkdown(report.loadMemory).join("\n")));
+  for (const app of ["compiler", "manual", "baseline"]) {
+    const value = report.loadMemory.apps[app];
+    assert.equal(value.runs.length, 6);
+    for (const field of ["usedSize", "embedderHeapUsedSize"]) {
+      for (const phase of ["ready", "sampledPeak", "postGC"]) {
+        const summary = value.phases[phase][field];
+        assert.ok(Number.isFinite(summary.medianBytes) && summary.medianBytes >= 0);
+        assert.ok(
+          summary.minBytes <= summary.medianBytes && summary.medianBytes <= summary.maxBytes,
+        );
+      }
+      for (const run of value.runs) assert.ok(run.sampledPeak[field] >= run.ready[field]);
+    }
+  }
+  assert.match(markdown, /natural GC can occur/);
+  assert.match(markdown, /not proof of a compiler-caused reduction/);
 });
 
 test("report evidence matches measured sources, builds and optional ablation", () => {

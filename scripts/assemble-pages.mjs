@@ -230,6 +230,7 @@ const artifacts = [
   "comparison.md",
   "comparison.json",
   "lighthouse.json",
+  "load-memory.json",
   "sources/compiler-App.js",
   "sources/manual-App.js",
   "slowdown.json",

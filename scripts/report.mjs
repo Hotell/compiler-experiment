@@ -1,6 +1,7 @@
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { measureBundle } from "./bundle-size.mjs";
+import { analyzeLoadMemory, loadMemoryMarkdown } from "./load-memory.mjs";
 import { comparisonBuilds, validateProvenance } from "./benchmark-provenance.mjs";
 import {
   ablationMarkdown,
@@ -31,6 +32,7 @@ assert.deepEqual(
 const slowdown = JSON.parse(readFileSync(`${directory}/slowdown.json`, "utf8"));
 const selectionLatency = JSON.parse(readFileSync(`${directory}/selection-latency.json`, "utf8"));
 const audits = JSON.parse(readFileSync(`${directory}/lighthouse.json`, "utf8"));
+const loadMemory = JSON.parse(readFileSync(`${directory}/load-memory.json`, "utf8"));
 const packages = JSON.parse(readFileSync("package.json", "utf8"));
 const apps = ["compiler", "manual", "baseline"];
 const round = (value, digits = 1) => Number(value.toFixed(digits));
@@ -129,6 +131,7 @@ const report = {
   load: {},
   interactions: { selection: {} },
   memory: {},
+  loadMemory: analyzeLoadMemory(loadMemory, input.browser),
   lighthouse: {},
   cpu: {},
 };
@@ -317,6 +320,7 @@ const lines = [
       `| ${app} | ${report.load[app].medianMs} | ${report.load[app].samplesMs.join(" / ")} |`,
   ),
   "",
+  ...loadMemoryMarkdown(report.loadMemory),
   "## Selection responsiveness (normal production builds)",
   "",
   "Select INC-0001 from Platform after one warm-up; 20 open/close trials per app in isolated contexts with app order rotated each trial and 4x CDP CPU slowdown. Browser timing starts in the click handler and stops at the detail DOM mutation; the two-frame measurement is a paint opportunity, not a guaranteed painted frame. Playwright action latency and React profiling overhead are excluded. Differences of a few milliseconds are advisory, not CI gates; individual samples are in comparison.json.",

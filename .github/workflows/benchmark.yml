@@ -43,6 +43,7 @@ jobs:
             benchmark/results/lighthouse-*.json
             benchmark/results/lighthouse.json
             benchmark/results/slowdown.json
+            benchmark/results/load-memory.json
             benchmark/results/selection-latency.json
           if-no-files-found: warn
       - uses: actions/upload-artifact@v7
