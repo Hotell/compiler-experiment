@@ -10,6 +10,8 @@ import {
 import "./profile-counts.test.mjs";
 import {
   ablationMarkdown,
+  analyzeFiltering,
+  analyzeUplt,
   evaluateComparison,
   inspectRowCaching,
   loadAblationEvidence,
@@ -17,37 +19,68 @@ import {
 } from "./report-evidence.mjs";
 import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
 import { analyzeLoadMemory, loadMemoryMarkdown } from "./load-memory.mjs";
+import { renderComparison, reportSections } from "./report-markdown.mjs";
+import { filteringProtocol } from "../benchmark/filtering.mjs";
 
 test("comparison explains load, Lighthouse, CPU traces and the decision", () => {
   const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
+  const slowdown = JSON.parse(readFileSync("benchmark/results/slowdown.json", "utf8"));
   const markdown = readFileSync("benchmark/results/comparison.md", "utf8");
+  assert.deepEqual(report.load, analyzeUplt(slowdown));
   assert.equal(report.schemaVersion, 2);
   assert.equal(report.versions.react, "19.3.0");
   assert.match(markdown, /React 19\.3\.0 profiling fiber/);
   const tables = lexer(markdown, { gfm: true }).filter((token) => token.type === "table");
-  assert.equal(
-    tables.length,
-    report.rowMemo.status === "available" ? 9 : 8,
-    "all comparison tables must render as GFM tables",
+  const sections = new Map();
+  let current;
+  for (const token of lexer(markdown, { gfm: true })) {
+    if (token.type === "heading" && token.depth === 2) {
+      current = token.text;
+      sections.set(current, []);
+    } else if (token.type === "table") sections.get(current).push(token);
+  }
+  assert.deepEqual(
+    [...sections.keys()],
+    reportSections.map((section) => section.title),
   );
+  assert.equal(sections.get("Overview").length, 1);
+  assert.equal(sections.get("Page load").length, 4);
+  assert.equal(sections.get("Row selection").length, 3);
+  assert.equal(sections.get("Query filtering").length, 9);
+  assert.equal(
+    sections.get("Additional evidence").length,
+    report.rowMemo.status === "available" ? 10 : 9,
+  );
+  assert.equal(markdown, renderComparison(report));
   for (const table of tables) {
     assert.ok(table.rows.every((row) => row.length === table.header.length));
+    const headers = table.header.map((cell) => cell.text);
+    if (!headers.includes("Row events ON / OFF")) {
+      const indices = ["No memoization", "Manual memoization", "React Compiler"].map((label) =>
+        headers.findIndex((header) => header.startsWith(label)),
+      );
+      assert.ok(indices[0] >= 0 && indices[0] < indices[1] && indices[1] < indices[2]);
+    }
   }
-  assert.match(markdown, /## Evaluation/);
-  assert.match(markdown, /## Component work and committed updates/);
-  assert.match(markdown, /## Selection responsiveness/);
-  assert.match(markdown, /## User-perceived load time/);
-  assert.match(markdown, /## Lighthouse/);
-  assert.match(markdown, /## CPU slowdown/);
-  assert.match(markdown, /## Post-GC JS heap/);
-  assert.match(markdown, /## Load memory \(normal production builds\)/);
-  assert.match(markdown, /raw \/ gzip \(kB\)/);
-  const initialBytes = markdown
-    .split("## Initial-load production bytes")[1]
-    .split("## User-perceived")[0];
-  assert.doesNotMatch(initialBytes, /gzip bytes/);
-  assert.match(markdown, /Row render-work events \(C \/ M \/ B\)/);
-  assert.match(markdown, /Queue render-work events \(C \/ M \/ B\)/);
+  for (const { id } of reportSections) assert.ok(markdown.includes(`](#${id})`));
+  const loadSection = markdown.split("## Page load\n")[1].split("## Row selection\n")[0];
+  assert.match(loadSection, /Initial-load production bytes/);
+  assert.match(loadSection, /User-perceived load time/);
+  assert.match(loadSection, /six runs covering all six app-order permutations/);
+  assert.match(loadSection, /Run 1 \/ 2 \/ 3 \/ 4 \/ 5 \/ 6 \(ms\)/);
+  assert.match(loadSection, /Lighthouse/);
+  assert.match(loadSection, /Load memory/);
+  assert.doesNotMatch(
+    loadSection,
+    /favorite-|Selection responsiveness|Filtering responsiveness|Post-GC JS heap/,
+  );
+  const selectionSection = markdown.split("## Row selection\n")[1].split("## Query filtering\n")[0];
+  assert.match(selectionSection, /Selection responsiveness/);
+  assert.doesNotMatch(selectionSection, /favorite-.*cpuprofile|filtering-latency\.json/);
+  assert.match(markdown, /JS gzip \(kB\)/);
+  assert.match(markdown, /Row render-work events/);
+  assert.match(markdown, /Queue render-work events/);
+  assert.doesNotMatch(markdown, /C \/ M \/ B|<details>|fewest JS-active sampled/);
   assert.doesNotMatch(markdown, /schema(?:[ -]?version)?[ :]*[vV]?2|does less row work/i);
   assert.match(markdown, /not milliseconds, equal-cost CPU operations, DOM mutations/);
   assert.match(markdown, /JS-active sampled time/);
@@ -59,16 +92,21 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
   assert.match(markdown, /\[rootId, rootGeneration, commitSequence\]/);
   assert.match(markdown, /\[measurements\.json\]\(measurements\.json\)/);
   assert.ok(report.evaluation?.recommendation);
+  assert.match(report.evaluation.recommendation, /Manual memoization remains effective/);
+  assert.match(report.evaluation.recommendation, /no demonstrated selection-speed winner/i);
+  assert.doesNotMatch(markdown, /Compare memoization by scenario, not a single overall winner/);
   assert.deepEqual(report.evaluation, evaluateComparison(report));
   for (const app of ["compiler", "manual", "baseline"]) {
     assert.ok(report.bundles[app].total.gzip > 0);
     assert.ok(report.actions[app].find((action) => action.name === "select incident"));
     assert.ok(report.load[app].medianMs > 0);
+    assert.equal(report.load[app].samplesMs.length, 6);
     assert.equal(report.interactions.selection[app].runs.length, 20);
     assert.ok(report.interactions.selection[app].medianDomMs > 0);
     assert.ok(report.interactions.selection[app].medianPaintMs > 0);
     assert.ok(report.memory[app].beforeBytes > 0);
     assert.ok(report.memory[app].afterBytes > 0);
+    assert.equal(report.memory[app].runs.length, 6);
     assert.ok(report.lighthouse[app].performanceScore >= 0);
     assert.match(markdown, new RegExp(`!\\[${app} CPU flame chart\\]`));
     assert.ok(existsSync(`benchmark/results/favorite-${app}.svg`));
@@ -98,7 +136,7 @@ test("comparison explains load, Lighthouse, CPU traces and the decision", () => 
         .favoriteButtonRenders > 0,
     );
   }
-  assert.match(markdown, /Open-button events \(C \/ M \/ B\) \| Favorite-button events/);
+  assert.match(markdown, /Open-button render-work events/);
   assert.ok(Number.isFinite(report.baselineDeltas.compiler.total.gzip.bytes));
 });
 
@@ -107,7 +145,7 @@ test("load-memory report preserves both CDP heap counters, phases, runs and rela
   const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
   const markdown = readFileSync("benchmark/results/comparison.md", "utf8");
   assert.deepEqual(report.loadMemory, analyzeLoadMemory(raw, report.versions.playwrightChromium));
-  assert.ok(markdown.includes(loadMemoryMarkdown(report.loadMemory).join("\n")));
+  assert.ok(markdown.includes(loadMemoryMarkdown(report.loadMemory, 3).join("\n")));
   for (const app of ["compiler", "manual", "baseline"]) {
     const value = report.loadMemory.apps[app];
     assert.equal(value.runs.length, 6);
@@ -149,7 +187,7 @@ test("report evidence matches measured sources, builds and optional ablation", (
     assert.match(markdown, /Generated-code pattern changed/);
   }
   assert.deepEqual(report.rowMemo, loadAblationEvidence(report));
-  assert.ok(markdown.includes(ablationMarkdown(report.rowMemo).join("\n")));
+  assert.ok(markdown.includes(ablationMarkdown(report.rowMemo, 3).join("\n")));
   if (report.rowMemo.status === "available") {
     assert.match(markdown, /byte-identical/);
     assert.match(markdown, /cannot predict the benefit of adding memo to the compiler/);
@@ -166,6 +204,36 @@ test("report evidence matches measured sources, builds and optional ablation", (
   } else {
     assert.match(markdown, /Ablation unavailable for this build/);
     assert.doesNotMatch(markdown, /\]\(row-memo\//);
+  }
+});
+
+test("typed filtering report matches every raw timing and profiling step", () => {
+  const raw = JSON.parse(readFileSync("benchmark/results/filtering-latency.json", "utf8"));
+  const input = JSON.parse(readFileSync("benchmark/results/measurements.json", "utf8"));
+  const report = JSON.parse(readFileSync("benchmark/results/comparison.json", "utf8"));
+  const markdown = readFileSync("benchmark/results/comparison.md", "utf8");
+  assert.deepEqual(report.interactions.filtering, analyzeFiltering(raw, input.browser));
+  const section = markdown.split("## Query filtering\n")[1].split("## Additional evidence\n")[0];
+  assert.match(section, /200 \/ 34 \/ 34 \/ 200/);
+  assert.match(section, /no result change/);
+  assert.match(section, /remounts 166/);
+  assert.doesNotMatch(section, /favorite-.*cpuprofile|Load memory/);
+  for (const app of ["baseline", "manual", "compiler"]) {
+    for (const [index, step] of filteringProtocol.steps.entries()) {
+      const samples = input.repetitions.map((repeat) => {
+        const path = repeat[app].paths.filtering;
+        assert.deepEqual(path.initialState, filteringProtocol.initialState);
+        const action = path.actions[index];
+        assert.equal(action.name, step.name);
+        return countProfileRecords(action.records, action.fiberRenders);
+      });
+      assert.deepEqual(report.paths.filtering[app][index], {
+        ...step,
+        ...summarizeProfileSamples(samples),
+      });
+      assert.equal(report.paths.filtering[app][index].mounts.rows, index === 3 ? 166 : 0);
+      assert.equal(report.interactions.filtering.apps[app][index].runs.length, 20);
+    }
   }
 });
 

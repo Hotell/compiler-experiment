@@ -5,6 +5,8 @@ import { extname, join, relative, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { checkDevtools } from "./check-devtools.mjs";
 import { analyzeLoadMemory } from "./load-memory.mjs";
+import { analyzeFiltering, analyzeUplt } from "./report-evidence.mjs";
+import { reportSections } from "./report-markdown.mjs";
 
 const root = resolve("dist-pages");
 const prefix = "/compiler-experiment/";
@@ -314,11 +316,76 @@ if (preview) {
           .getByRole("navigation", { name: "Try profiling these apps" })
           .getByRole("link")
           .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
-        ["../profile/compiler/", "../profile/manual/", "../profile/baseline/"],
+        ["../profile/baseline/", "../profile/manual/", "../profile/compiler/"],
       );
+      assert.deepEqual(
+        await page.locator("article h2").allTextContents(),
+        reportSections.map((section) => section.title),
+      );
+      const navigation = page.getByRole("navigation", { name: "Report sections", exact: true });
+      assert.deepEqual(
+        await navigation
+          .getByRole("link")
+          .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+        reportSections.map((section) => `#${section.id}`),
+      );
+      const sections = await page.locator("article h2").evaluateAll((headings) =>
+        headings.map((heading) => {
+          const tables = [];
+          let text = "";
+          for (
+            let sibling = heading.nextElementSibling;
+            sibling && sibling.tagName !== "H2";
+            sibling = sibling.nextElementSibling
+          ) {
+            text += sibling.textContent;
+            tables.push(...sibling.querySelectorAll("table"));
+          }
+          return {
+            id: heading.id,
+            text,
+            headers: tables.map((table) =>
+              [...table.querySelectorAll("thead th")].map((cell) => cell.textContent),
+            ),
+          };
+        }),
+      );
+      assert.deepEqual(
+        sections.map((section) => section.id),
+        reportSections.map((section) => section.id),
+      );
+      assert.deepEqual(
+        sections.map((section) => section.headers.length),
+        [1, 4, 3, 9, report.rowMemo.status === "available" ? 10 : 9, 0],
+      );
+      for (const section of sections) {
+        for (const headers of section.headers) {
+          if (headers.includes("Row events ON / OFF")) continue;
+          const indices = ["No memoization", "Manual memoization", "React Compiler"].map((label) =>
+            headers.findIndex((header) => header.startsWith(label)),
+          );
+          assert.ok(
+            indices[0] >= 0 && indices[0] < indices[1] && indices[1] < indices[2],
+            `${name} ${section.id} comparison order differs`,
+          );
+        }
+      }
+      assert.doesNotMatch(
+        sections[1].text,
+        /Selection responsiveness|Filtering responsiveness|Favorite interaction/,
+      );
+      assert.match(sections[2].text, /67 visible incidents/);
+      assert.match(sections[3].text, /200 \/ 34 \/ 34 \/ 200/);
+      assert.match(sections[3].text, /no result change/);
+      assert.match(sections[0].text, /Manual memoization remains effective/);
+      assert.match(sections[1].text, /six runs covering all six app-order permutations/);
+      const slowdownResponse = await page.request.get(new URL("report/slowdown.json", base).href);
+      assert.equal(slowdownResponse.status(), 200);
+      assert.deepEqual(analyzeUplt(await slowdownResponse.json()), report.load);
       assert.equal(
-        await page.locator("article table").count(),
-        report.rowMemo.status === "available" ? 9 : 8,
+        await page.locator("article details").count(),
+        0,
+        "All comparison evidence must be expanded",
       );
       assert.equal(
         await page
@@ -332,6 +399,14 @@ if (preview) {
         analyzeLoadMemory(await memoryResponse.json(), report.versions.playwrightChromium),
         report.loadMemory,
       );
+      const filteringResponse = await page.request.get(
+        new URL("report/filtering-latency.json", base).href,
+      );
+      assert.equal(filteringResponse.status(), 200);
+      assert.deepEqual(
+        analyzeFiltering(await filteringResponse.json(), report.versions.playwrightChromium),
+        report.interactions.filtering,
+      );
       assert.doesNotMatch(
         await page.locator("article").innerText(),
         /schema(?:[ -]?version)?[ :]*v?2/i,
@@ -342,14 +417,12 @@ if (preview) {
           .count(),
         1,
       );
-      assert.equal(
-        await page
-          .getByRole("columnheader", { name: "Row render-work events (C / M / B)", exact: true })
-          .count(),
-        1,
-      );
-      for (const link of await page.locator("article a").all()) {
+      for (const link of await page.locator("article a[href]").all()) {
         const href = await link.getAttribute("href");
+        if (href.startsWith("#")) {
+          assert.equal(await page.locator(href).count(), 1, `Missing report anchor: ${href}`);
+          continue;
+        }
         assert.equal(
           (await page.request.get(new URL(href, page.url()).href)).status(),
           200,
@@ -357,7 +430,6 @@ if (preview) {
         );
       }
       if (report.rowCaching.status === "recognized") {
-        await page.getByText("Inspect the generated cache boundaries", { exact: true }).click();
         assert.equal(await page.locator("article pre").count(), 3);
         assert.ok(
           await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -376,6 +448,7 @@ if (preview) {
         );
         assert.ok(records.some((record) => record.id === "root"));
         assert.ok(records.every((record) => Number.isFinite(record.baseDuration)));
+        assert.equal(measurements.repetitions[0][app].paths.filtering.actions.length, 4);
       }
       assert.deepEqual(await undersizedText(page), [], `${name} benchmark text is below 16px`);
       const reportFontSizes = await page.evaluate(() => ({
@@ -415,7 +488,18 @@ if (preview) {
               .getAttribute("href")
           )?.endsWith(`/actions/runs/${process.env.BENCHMARK_RUN_ID}`),
         );
+      await page.evaluate(() => scrollTo(0, 0));
       await page.screenshot({ path: `benchmark/results/report-${name}.png` });
+      for (const id of ["row-selection", "query-filtering"]) {
+        await navigation.locator(`a[href="#${id}"]`).click();
+        assert.equal(new URL(page.url()).hash, `#${id}`);
+        const heading = await page.locator(`#${id}`).boundingBox();
+        assert.ok(
+          heading.y >= 0 && heading.y + heading.height <= height,
+          `${name} ${id} anchor is occluded`,
+        );
+        await page.screenshot({ path: `benchmark/results/report-${id}-${name}.png` });
+      }
       assert.ok(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         `${name} report overflows horizontally`,

@@ -159,7 +159,7 @@ export function analyzeLoadMemory(input, browserVersion) {
   return { apps, deltas, repetitions: loadMemoryOrders.length, sampleIntervalMs, coverage };
 }
 
-export function loadMemoryMarkdown(memory) {
+export function loadMemoryMarkdown(memory, headingDepth = 2) {
   const phases = {
     ready: "Ready, before forced GC",
     sampledPeak: "Sampled load-window peak",
@@ -172,25 +172,28 @@ export function loadMemoryMarkdown(memory) {
     return `${rounded > 0 ? "+" : ""}${rounded.toFixed(2)}%`;
   };
   return [
-    "## Load memory (normal production builds)",
+    `${"#".repeat(headingDepth)} Load memory (normal production builds)`,
     "",
     "Separate memory-only loads: six repetitions per app, all six app orders, a fresh Chromium browser and context for each load, cache disabled, 1440 x 900 viewport and 4x CPU slowdown. Readiness is the full 200-row table followed by two animation-frame callbacks. No React profiling build, DevTools hook, CPU sampling, or forced GC runs during the load window; memory polling is not added to the existing load/interaction latency runs.",
     "",
     "**JS heap used** is CDP Runtime.getHeapUsage.usedSize (V8 used heap). **Embedder heap used** is embedderHeapUsedSize (the embedder's garbage-collected heap, including Blink-managed objects); it is not all native/DOM memory or total tab/process memory. CDP reports the corresponding isolate, not just React or a single execution context. Allocated JS heap (totalSize) and array-buffer/external-string backing storage (backingStorageSize) are retained separately in the raw data, not added into a claimed memory total.",
     "",
-    "| Metric | Observation | Compiler MiB, median [min, max] | Manual MiB, median [min, max] | Baseline MiB, median [min, max] | Compiler vs manual | Compiler vs baseline |",
-    "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
+    "| Metric | Observation | No memoization MiB, median [min, max] | Manual memoization MiB, median [min, max] | React Compiler MiB, median [min, max] | Manual vs no memoization | Compiler vs no memoization | Compiler vs manual |",
+    "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ...Object.entries(displayedHeapFields).flatMap(([field, label]) =>
       memoryPhases.map((phase) => {
-        const cells = memoryApps.map((app) => {
+        const cells = ["baseline", "manual", "compiler"].map((app) => {
           const value = memory.apps[app].phases[phase][field];
           return `${mib(value.medianBytes)} [${mib(value.minBytes)}, ${mib(value.maxBytes)}]`;
         });
-        return `| ${label} | ${phases[phase]} | ${cells.join(" | ")} | ${percent(memory.deltas.manual[phase][field].percent)} | ${percent(memory.deltas.baseline[phase][field].percent)} |`;
+        const baseline = memory.apps.baseline.phases[phase][field].medianBytes;
+        const manual = memory.apps.manual.phases[phase][field].medianBytes;
+        const manualPercent = baseline === 0 ? null : ((manual - baseline) * 100) / baseline;
+        return `| ${label} | ${phases[phase]} | ${cells.join(" | ")} | ${percent(manualPercent)} | ${percent(memory.deltas.baseline[phase][field].percent)} | ${percent(memory.deltas.manual[phase][field].percent)} |`;
       }),
     ),
     "",
-    "Percentages compare the displayed medians, using manual or baseline as the denominator; negative means the compiler used less. Min/max show the six runs, not confidence intervals. No memory winner or statistical significance is inferred from this small local sample.",
+    "Main percentages compare unrounded medians against No memoization; the final compiler-versus-manual column uses manual as its reference. Negative means less memory, positive means more. Min/max show the six runs, not confidence intervals. No memory winner or statistical significance is inferred from this small local sample.",
     "",
     "Samples use Runtime.getHeapUsage with a requested 20 ms pause after each response. CDP scheduling and main-thread work can delay samples; timestamps bracket each request in the raw data. The sampled peak is the largest observed counter from navigation start through the readiness snapshot, not the true allocation peak; independent counter maxima need not occur together. Polling adds overhead, and natural GC can occur before any sample. Ready/pre-forced-GC values therefore include GC-timing noise, not just live retained objects.",
     "",

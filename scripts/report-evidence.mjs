@@ -1,7 +1,10 @@
 import { strict as assert } from "node:assert";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
+import { filteringProtocol, filteringResultIds } from "../benchmark/filtering.mjs";
+import { loadMemoryOrders } from "../benchmark/load-memory.mjs";
 import { hashFiles } from "./benchmark-provenance.mjs";
+import { median } from "./profile-counts.mjs";
 import { analyzeRowAblation } from "./row-ablation.mjs";
 
 export const ablationFiles = [
@@ -23,14 +26,125 @@ export function evaluateComparison(report) {
   const { bytes, percent } = report.deltas.js.raw;
   const bundle =
     bytes === 0
-      ? "compiler and manual ship the same amount of minified JavaScript."
-      : `compiler ships ${Math.abs(percent).toFixed(2)}% ${bytes > 0 ? "more" : "less"} minified JavaScript.`;
-  const compiler = report.interactions.selection.compiler;
-  const manual = report.interactions.selection.manual;
+      ? "ships the same amount of minified JavaScript"
+      : `ships ${Math.abs(percent).toFixed(2)}% ${bytes > 0 ? "more" : "less"} minified JavaScript`;
+  const bundleConclusion =
+    bytes > 0
+      ? "Manual optimization has lower bundle cost in this workload."
+      : bytes < 0
+        ? "The compiler has lower bundle cost in this workload."
+        : "Neither approach has a bundle-size advantage in this workload.";
+  const labels = {
+    baseline: "No memoization",
+    manual: "Manual memoization",
+    compiler: "React Compiler",
+  };
+  const selection = ["baseline", "manual", "compiler"]
+    .map((app) => `${report.interactions.selection[app].medianDomMs} ms (${labels[app]})`)
+    .join("; ");
   return {
-    recommendation: `No demonstrated selection-speed winner between compiler and manual; ${bundle}`,
-    rationale: `With 4x CPU slowdown, median selection-to-detail DOM was ${compiler.medianDomMs} ms (compiler) vs ${manual.medianDomMs} ms (manual), and two-frame paint opportunity was ${compiler.medianPaintMs} vs ${manual.medianPaintMs} ms. These descriptive timings do not establish a repeatable speed winner. Fewer row render-work events do not by themselves demonstrate lower latency.`,
-    caveat: `Twenty warmed interactions in one Chromium process and three local load/Lighthouse repetitions are advisory, not statistical proof or real-user evidence. Paint opportunity is not a guaranteed presentation timestamp. Render-work events use internal React ${report.versions.react} profiling fiber flags, not a public API; revalidate after upgrades. The Oxc compiler integration is experimental.`,
+    recommendation: `Manual memoization remains effective in this app: no demonstrated selection-speed winner between compiler and manual, while compiler ${bundle}.`,
+    rationale: `${bundleConclusion} Median selection-to-detail DOM at 4x CPU slowdown: ${selection}. These descriptive timings do not establish a repeatable speed winner. They do not establish equivalent responsiveness, identical memory behavior, or guaranteed gains in every scenario. Compare load, selection and query filtering separately; fewer render-work events do not by themselves demonstrate lower latency.`,
+    caveat: `Six local load repetitions, three Lighthouse audits and twenty warmed trials per interaction in one Chromium process are advisory, not statistical proof or real-user evidence. Paint opportunity is not a guaranteed presentation timestamp. Render-work events use internal React ${report.versions.react} profiling fiber flags, not a public API; revalidate after upgrades. The Oxc compiler integration is experimental.`,
+  };
+}
+
+export function analyzeUplt(input) {
+  assert.equal(input.cpuRate, 4, "UPLT must use 4x CPU slowdown");
+  assert.equal(input.repetitions.length, loadMemoryOrders.length, "UPLT requires six repetitions");
+  input.repetitions.forEach((repeat, index) => {
+    assert.deepEqual(repeat.order, loadMemoryOrders[index], "UPLT requires all six app orders");
+  });
+  return Object.fromEntries(
+    ["baseline", "manual", "compiler"].map((app) => {
+      const samples = input.repetitions.map((repeat) => repeat[app].uptlMs);
+      assert.ok(
+        samples.every((value) => Number.isFinite(value) && value > 0),
+        `${app} missing UPLT timing`,
+      );
+      return [
+        app,
+        {
+          medianMs: Number(median(samples).toFixed(1)),
+          samplesMs: samples.map((value) => Number(value.toFixed(1))),
+        },
+      ];
+    }),
+  );
+}
+
+export function analyzeFiltering(raw, browser) {
+  assert.equal(raw?.schemaVersion, 1, "Missing filtering timing; rerun yarn benchmark");
+  assert.equal(raw.browser, browser, "Filtering browser differs from profiling browser");
+  assert.equal(raw.cpuRate, 4, "Filtering timing must use 4x CPU slowdown");
+  assert.deepEqual(raw.protocol, filteringProtocol, "Filtering protocol changed");
+  assert.equal(raw.repetitions.length, 20, "Filtering requires 20 repetitions");
+  const apps = ["baseline", "manual", "compiler"];
+  raw.repetitions.forEach((repeat, index) => {
+    assert.deepEqual(
+      [...repeat.order].sort(),
+      [...apps].sort(),
+      "Filtering app order is incomplete",
+    );
+    const first = raw.repetitions[0].order;
+    assert.deepEqual(
+      repeat.order,
+      [...first.slice(index % 3), ...first.slice(0, index % 3)],
+      "Filtering order must rotate",
+    );
+    for (const app of apps) {
+      assert.equal(
+        repeat[app].length,
+        filteringProtocol.steps.length,
+        "Filtering steps are incomplete",
+      );
+      repeat[app].forEach((sample, stepIndex) => {
+        const step = filteringProtocol.steps[stepIndex];
+        for (const [key, value] of Object.entries(step))
+          assert.equal(sample[key], value, `Filtering ${app} ${key} differs`);
+        assert.deepEqual(
+          sample.resultIds,
+          filteringResultIds(step.query),
+          "Filtering result IDs differ",
+        );
+        assert.ok(
+          Number.isFinite(sample.paintMs) && sample.paintMs > 0,
+          "Filtering frame timing is missing",
+        );
+        if (step.resultsChanged) {
+          assert.ok(
+            Number.isFinite(sample.domMs) && sample.domMs > 0 && sample.paintMs >= sample.domMs,
+            "Filtering DOM timing is missing",
+          );
+        } else assert.equal(sample.domMs, null, "Unchanged results have no result-DOM timing");
+      });
+    }
+  });
+  const rounded = (value) => Number(value.toFixed(1));
+  const p90 = (values) =>
+    [...values].sort((left, right) => left - right)[Math.ceil(values.length * 0.9) - 1];
+  return {
+    protocol: raw.protocol,
+    cpuRate: raw.cpuRate,
+    order: raw.repetitions.map((repeat) => repeat.order),
+    apps: Object.fromEntries(
+      apps.map((app) => [
+        app,
+        filteringProtocol.steps.map((step, index) => {
+          const runs = raw.repetitions.map((repeat) => repeat[app][index]);
+          const dom = runs.map((sample) => sample.domMs);
+          const paint = runs.map((sample) => sample.paintMs);
+          return {
+            ...step,
+            medianDomMs: step.resultsChanged ? rounded(median(dom)) : null,
+            p90DomMs: step.resultsChanged ? rounded(p90(dom)) : null,
+            medianPaintMs: rounded(median(paint)),
+            p90PaintMs: rounded(p90(paint)),
+            runs,
+          };
+        }),
+      ]),
+    ),
   };
 }
 
@@ -105,13 +219,12 @@ export function selectionEvidence(actions) {
   );
   assert.ok(selected.every(Boolean), "Selection evidence is missing");
   const [compiler, manual, baseline] = selected;
-  const triplet = (field) => selected.map((sample) => sample[field]).join(" / ");
   const observedGap =
     compiler.rowRenders === baseline.rowRenders &&
     compiler.rowRenders > manual.rowRenders &&
     compiler.openButtonRenders < baseline.openButtonRenders;
   return [
-    `For selection in this run (C / M / B), row events are **${triplet("rowRenders")}**, open-button events **${triplet("openButtonRenders")}**, and favorite-button events **${triplet("favoriteButtonRenders")}**.`,
+    `Selection update events: **No memoization: ${baseline.rowRenders} rows, ${baseline.openButtonRenders} open buttons, ${baseline.favoriteButtonRenders} favorite buttons; Manual memoization: ${manual.rowRenders} rows, ${manual.openButtonRenders} open buttons, ${manual.favoriteButtonRenders} favorite buttons; React Compiler: ${compiler.rowRenders} rows, ${compiler.openButtonRenders} open buttons, ${compiler.favoriteButtonRenders} favorite buttons**.`,
     observedGap
       ? "Compiler and baseline record the same number of row events here, but the compiler records fewer child-button events. Equal row counts do not mean equal CPU cost or equal DOM work."
       : "This run does not show the previously observed combination of equal compiler/baseline row counts and fewer compiler child-button events. Use these current counts rather than assuming an older 67-row result still applies.",
@@ -182,9 +295,9 @@ export function loadAblationEvidence(report, directory = "benchmark/results/row-
   };
 }
 
-export function ablationMarkdown(evidence) {
+export function ablationMarkdown(evidence, headingDepth = 2) {
   const intro = [
-    "## What the isolated row-memo experiment adds",
+    `${"#".repeat(headingDepth)} What the isolated row-memo experiment adds`,
     "",
     "The three comparison arms remain unchanged. A separate manual-app experiment toggles only the outer IncidentRow memo wrapper; callbacks, provider values and child memoization stay intact. Removing that wrapper does not reproduce compiler caching inside the row, and cannot predict the benefit of adding memo to the compiler arm.",
     "",

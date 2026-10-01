@@ -20,32 +20,157 @@ function temporary(t) {
   return directory;
 }
 
-test("neutral headline uses minified JS percentage relative to manual, not gzip or total bytes", () => {
-  for (const [bytes, percent, expected] of [
-    [8167, 3.44, "compiler ships 3.44% more minified JavaScript."],
-    [-420, -0.18, "compiler ships 0.18% less minified JavaScript."],
-    [0, 0, "compiler and manual ship the same amount of minified JavaScript."],
+test("evaluation compares all three approaches without declaring a timing winner", () => {
+  const result = evaluateComparison({
+    versions: { react: "test" },
+    deltas: { js: { raw: { bytes: 8167, percent: 3.44 } } },
+    interactions: {
+      selection: {
+        baseline: { medianDomMs: 8, medianPaintMs: 20 },
+        manual: { medianDomMs: 4, medianPaintMs: 11 },
+        compiler: { medianDomMs: 3, medianPaintMs: 10 },
+      },
+    },
+  });
+  assert.match(result.recommendation, /Manual memoization remains effective/);
+  assert.match(result.recommendation, /3\.44% more minified JavaScript/);
+  assert.match(result.recommendation, /no demonstrated selection-speed winner/i);
+  assert.match(result.rationale, /lower bundle cost/);
+  assert.match(result.rationale, /not.*equivalent.*memory/i);
+  assert.match(result.rationale, /8 ms.*No memoization/);
+  assert.match(result.rationale, /4 ms.*Manual memoization/);
+  assert.match(result.rationale, /3 ms.*React Compiler/);
+  assert.match(result.rationale, /do not establish a repeatable speed winner/);
+  assert.doesNotMatch(result.recommendation, /compiler.*(?:wins|faster)|manual.*(?:wins|faster)/i);
+});
+
+test("recommendation follows measured bundle direction rather than always favoring manual", () => {
+  const selection = Object.fromEntries(
+    ["baseline", "manual", "compiler"].map((app) => [app, { medianDomMs: 4, medianPaintMs: 10 }]),
+  );
+  for (const [bytes, percent, phrase] of [
+    [-420, -0.18, "0.18% less minified JavaScript"],
+    [0, 0, "the same amount of minified JavaScript"],
   ]) {
     const result = evaluateComparison({
-      deltas: {
-        js: { raw: { bytes, percent }, gzip: { bytes: -99, percent: -88 } },
-        total: { raw: { bytes: -77, percent: -66 }, gzip: { bytes: -55, percent: -44 } },
-      },
       versions: { react: "test" },
-      interactions: {
-        selection: {
-          compiler: { medianDomMs: 3, medianPaintMs: 10 },
-          manual: { medianDomMs: 4, medianPaintMs: 11 },
-        },
-      },
+      interactions: { selection },
+      deltas: { js: { raw: { bytes, percent } } },
     });
-    assert.equal(
-      result.recommendation,
-      `No demonstrated selection-speed winner between compiler and manual; ${expected}`,
-    );
-    assert.doesNotMatch(result.recommendation, /gzip|kB|parse time|parsing time/);
-    assert.match(result.rationale, /3 ms \(compiler\) vs 4 ms \(manual\)/);
-    assert.match(result.rationale, /do not establish a repeatable speed winner/);
+    assert.ok(result.recommendation.includes(phrase));
+    assert.doesNotMatch(result.rationale, /manual.*lower bundle cost/i);
+  }
+});
+
+test("UPLT requires six balanced runs and preserves all samples", async () => {
+  const { analyzeUplt } = await import("./report-evidence.mjs");
+  const { loadMemoryOrders } = await import("../benchmark/load-memory.mjs");
+  const times = [120, 90, 130, 100, 140, 110];
+  const raw = {
+    cpuRate: 4,
+    repetitions: loadMemoryOrders.map((order, index) => ({
+      order,
+      ...Object.fromEntries(
+        ["baseline", "manual", "compiler"].map((app) => [app, { uptlMs: times[index] }]),
+      ),
+    })),
+  };
+  const before = JSON.stringify(raw);
+  const result = analyzeUplt(raw);
+  assert.equal(result.baseline.medianMs, 115);
+  assert.deepEqual(result.baseline.samplesMs, times);
+  assert.equal(result.manual.samplesMs.length, 6);
+  assert.equal(result.compiler.samplesMs.length, 6);
+  assert.equal(JSON.stringify(raw), before);
+  for (const mutate of [
+    (value) => {
+      value.repetitions.pop();
+    },
+    (value) => {
+      value.cpuRate = 1;
+    },
+    (value) => {
+      value.repetitions[0].baseline.uptlMs = 0;
+    },
+    (value) => {
+      value.repetitions[0].manual.uptlMs = Infinity;
+    },
+    (value) => {
+      value.repetitions[3].order = value.repetitions[0].order;
+    },
+  ]) {
+    const invalid = structuredClone(raw);
+    mutate(invalid);
+    assert.throws(() => analyzeUplt(invalid));
+  }
+});
+
+test("filtering validates per-step trials and distinguishes unchanged results from zero time", async () => {
+  const { analyzeFiltering } = await import("./report-evidence.mjs");
+  const { filteringProtocol } = await import("../benchmark/filtering.mjs");
+  const apps = ["baseline", "manual", "compiler"];
+  const raw = {
+    schemaVersion: 1,
+    browser: "test",
+    cpuRate: 4,
+    protocol: filteringProtocol,
+    repetitions: Array.from({ length: 20 }, (_, index) => ({
+      order: [...apps.slice(index % 3), ...apps.slice(0, index % 3)],
+      ...Object.fromEntries(
+        apps.map((app) => [
+          app,
+          filteringProtocol.steps.map((step) => ({
+            ...step,
+            resultIds:
+              step.query.length > 1 ? filteringProtocol.filteredIds : filteringProtocol.initialIds,
+            domMs: step.resultsChanged ? index + 1 : null,
+            paintMs: index + 10,
+          })),
+        ]),
+      ),
+    })),
+  };
+  const before = JSON.stringify(raw);
+  const result = analyzeFiltering(raw, "test");
+  assert.equal(result.apps.baseline[0].medianDomMs, null);
+  assert.equal(result.apps.baseline[1].medianDomMs, 10.5);
+  assert.equal(result.apps.baseline[1].p90DomMs, 18);
+  assert.equal(result.apps.baseline[2].p90DomMs, null);
+  assert.equal(result.apps.baseline[3].medianPaintMs, 19.5);
+  assert.equal(result.apps.manual[0].runs.length, 20);
+  assert.equal(JSON.stringify(raw), before);
+  for (const mutate of [
+    (value) => {
+      value.repetitions.pop();
+    },
+    (value) => {
+      value.browser = "other";
+    },
+    (value) => {
+      value.cpuRate = 1;
+    },
+    (value) => {
+      value.repetitions[0].baseline[0].domMs = 0;
+    },
+    (value) => {
+      value.repetitions[0].baseline[1].domMs = null;
+    },
+    (value) => {
+      value.repetitions[0].baseline[1].resultIds.reverse();
+    },
+    (value) => {
+      value.repetitions[0].baseline[2].query = "different";
+    },
+    (value) => {
+      value.protocol.initialState.queue = "Platform";
+    },
+    (value) => {
+      value.repetitions[0].order = ["baseline", "baseline", "manual"];
+    },
+  ]) {
+    const invalid = structuredClone(raw);
+    mutate(invalid);
+    assert.throws(() => analyzeFiltering(invalid, "test"));
   }
 });
 
@@ -67,11 +192,33 @@ test("row comparisons count events and accept improved compiler bailouts", () =>
       ],
     ]),
   );
-  assert.match(selectionEvidence(actions), /\*\*67 \/ 1 \/ 67\*\*/);
+  assert.match(
+    selectionEvidence(actions),
+    /No memoization: 67 rows.*Manual memoization: 1 rows.*React Compiler: 67 rows/,
+  );
   assert.match(selectionEvidence(actions), /Equal row counts do not mean equal CPU cost/);
   actions.compiler[0].rowRenders = 1;
   assert.match(selectionEvidence(actions), /does not show the previously observed/);
   assert.doesNotMatch(selectionEvidence(actions), /record the same number of row events here/);
+});
+
+test("comparison tables keep baseline first and preserve missing versus measured zero", async () => {
+  const { comparisonTable, reportSections } = await import("./report-markdown.mjs");
+  const markdown = comparisonTable([
+    { label: "Latency (ms)", values: { baseline: 8, manual: 4, compiler: 3 }, relative: true },
+    { label: "Zero reference", values: { baseline: 0, manual: 1, compiler: 0 }, relative: true },
+    { label: "Profiler (ms)", values: { baseline: null, manual: 0, compiler: null } },
+  ]).join("\n");
+  assert.match(markdown, /Metric \| No memoization \| Manual memoization \| React Compiler/);
+  assert.match(markdown, /4\.0 \(-4\.0; -50\.0%\)/);
+  assert.match(markdown, /3\.0 \(-5\.0; -62\.5%\)/);
+  assert.match(markdown, /1\.0 \(\+1\.0; n\/a\)/);
+  assert.match(markdown, /not observed \| 0\.0 \| not observed/);
+  assert.doesNotMatch(markdown, /NaN|Infinity/);
+  assert.deepEqual(
+    reportSections.map((section) => section.id),
+    ["overview", "page-load", "row-selection", "query-filtering", "evidence", "methodology"],
+  );
 });
 
 test("cache explanations quote real source or explicitly request reassessment", () => {

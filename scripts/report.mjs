@@ -1,15 +1,16 @@
 import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { strict as assert } from "node:assert";
 import { measureBundle } from "./bundle-size.mjs";
-import { analyzeLoadMemory, loadMemoryMarkdown } from "./load-memory.mjs";
+import { analyzeLoadMemory } from "./load-memory.mjs";
+import { filteringProtocol, filteringResultIds } from "../benchmark/filtering.mjs";
+import { renderComparison } from "./report-markdown.mjs";
 import { comparisonBuilds, validateProvenance } from "./benchmark-provenance.mjs";
 import {
-  ablationMarkdown,
+  analyzeFiltering,
+  analyzeUplt,
   evaluateComparison,
   inspectRowCaching,
   loadAblationEvidence,
-  rowComparison,
-  selectionEvidence,
 } from "./report-evidence.mjs";
 import {
   assertMeasurementsV2,
@@ -31,6 +32,7 @@ assert.deepEqual(
 );
 const slowdown = JSON.parse(readFileSync(`${directory}/slowdown.json`, "utf8"));
 const selectionLatency = JSON.parse(readFileSync(`${directory}/selection-latency.json`, "utf8"));
+const filteringLatency = JSON.parse(readFileSync(`${directory}/filtering-latency.json`, "utf8"));
 const audits = JSON.parse(readFileSync(`${directory}/lighthouse.json`, "utf8"));
 const loadMemory = JSON.parse(readFileSync(`${directory}/load-memory.json`, "utf8"));
 const packages = JSON.parse(readFileSync("package.json", "utf8"));
@@ -38,9 +40,6 @@ const apps = ["compiler", "manual", "baseline"];
 const round = (value, digits = 1) => Number(value.toFixed(digits));
 const p90 = (numbers) =>
   [...numbers].sort((left, right) => left - right)[Math.ceil(numbers.length * 0.9) - 1];
-const kB = (bytes) => (bytes / 1000).toFixed(2);
-const signedKB = (bytes) => `${bytes > 0 ? "+" : ""}${kB(bytes)}`;
-const MiB = (bytes) => (bytes / 1048576).toFixed(2);
 
 function flameChart(app) {
   const profile = JSON.parse(readFileSync(`${directory}/favorite-${app}.cpuprofile`, "utf8"));
@@ -125,16 +124,18 @@ const report = {
     lighthouse: audits.repetitions[0].compiler.version,
   },
   workload:
-    "200 deterministic incidents; isolated Chromium contexts; one warm-up; 3 repetitions alternating app order; initial mounts outside actions, action mounts reported separately from updates",
+    "200 deterministic incidents; isolated Chromium contexts; one warm-up and 3 rotated profiling repetitions; 6 UPLT runs covering all app orders; initial mounts outside actions, action mounts reported separately from updates",
   bundles: Object.fromEntries(apps.map((app) => [app, measureBundle(`apps/${app}/dist`)])),
   actions: {},
-  load: {},
-  interactions: { selection: {} },
+  load: analyzeUplt(slowdown),
+  interactions: { selection: {}, filtering: analyzeFiltering(filteringLatency, input.browser) },
+  paths: { filtering: {} },
   memory: {},
   loadMemory: analyzeLoadMemory(loadMemory, input.browser),
   lighthouse: {},
   cpu: {},
 };
+assert.equal(input.repetitions.length, 3, "Profiling requires three repetitions");
 for (const app of apps) {
   const runs = input.repetitions.map((repeat) => repeat[app]);
   assert.ok(
@@ -158,9 +159,32 @@ for (const app of apps) {
       ...summarizeProfileSamples(samples),
     };
   });
+  for (const run of runs) {
+    const path = run.paths?.filtering;
+    assert.ok(path?.mounts > 0, `${app} missing isolated filtering profile; rerun yarn benchmark`);
+    assert.deepEqual(path.initialState, filteringProtocol.initialState);
+    assert.equal(path.actions.length, filteringProtocol.steps.length);
+    validateProfileRecords(path.actions.flatMap((action) => action.records));
+    path.actions.forEach((sample, index) => {
+      const step = filteringProtocol.steps[index];
+      for (const [key, value] of Object.entries(step)) assert.equal(sample[key], value);
+      assert.deepEqual(sample.resultIds, filteringResultIds(step.query));
+      const counts = countProfileRecords(sample.records, sample.fiberRenders);
+      assert.ok(counts.commits > 0, "Filtering input must have a completed profiling commit");
+      assert.equal(counts.mounts.rows, step.query === "" ? 166 : 0);
+    });
+  }
+  report.paths.filtering[app] = filteringProtocol.steps.map((step, index) => ({
+    ...step,
+    ...summarizeProfileSamples(
+      runs.map((run) => {
+        const sample = run.paths.filtering.actions[index];
+        return countProfileRecords(sample.records, sample.fiberRenders);
+      }),
+    ),
+  }));
 }
 assert.equal(slowdown.cpuRate, 4, "UPLT and CPU traces must use a 4x CPU slowdown");
-assert.equal(slowdown.repetitions.length, 3);
 assert.equal(selectionLatency.cpuRate, 4, "Selection timing must use a 4x CPU slowdown");
 assert.equal(selectionLatency.repetitions.length, 20, "Selection timing requires 20 repetitions");
 assert.equal(audits.repetitions.length, 3);
@@ -178,12 +202,6 @@ for (const app of apps) {
     medianPaintMs: round(median(paintTimes)),
     p90PaintMs: round(p90(paintTimes)),
     runs: selectionRuns,
-  };
-  const loadSamples = slowdown.repetitions.map((repeat) => repeat[app].uptlMs);
-  assert.ok(loadSamples.every((value) => value > 0));
-  report.load[app] = {
-    medianMs: round(median(loadSamples)),
-    samplesMs: loadSamples.map((value) => round(value)),
   };
   const heapSamples = slowdown.repetitions.map((repeat) => {
     const { heapBeforeBytes: beforeBytes, heapAfterBytes: afterBytes } = repeat[app];
@@ -278,166 +296,5 @@ if (process.argv.includes("--require-ablation"))
 if (report.rowMemo.status !== "available") console.warn(report.rowMemo.reason);
 writeFileSync(`${directory}/comparison.json`, JSON.stringify(report, null, 2));
 
-const lines = [
-  "# React Compiler / manual memoization / no optimization",
-  "",
-  `Node ${report.versions.node}; Chromium ${input.browser}; React ${report.versions.react}; Vite ${report.versions.vite}; plugin-react ${report.versions.pluginReact}; oxc-transform-react ${report.versions.oxcTransformReact}; Oxlint ${report.versions.oxlint}.`,
-  "",
-  report.workload,
-  "",
-  "## Evaluation",
-  "",
-  `**${report.evaluation.recommendation}**`,
-  "",
-  report.evaluation.rationale,
-  "",
-  report.evaluation.caveat,
-  "",
-  "## Initial-load production bytes",
-  "",
-  "All sizes use decimal kB (1 kB = 1,000 bytes); exact bytes remain in comparison.json.",
-  "",
-  "| Asset | Compiler raw / gzip (kB) | Manual raw / gzip (kB) | Baseline raw / gzip (kB) | Delta raw / gzip (kB, compiler - manual) |",
-  "| --- | ---: | ---: | ---: | ---: |",
-  ...["js", "css", "total"].map(
-    (kind) =>
-      `| ${kind.toUpperCase()} | ${kB(report.bundles.compiler[kind].raw)} / ${kB(report.bundles.compiler[kind].gzip)} | ${kB(report.bundles.manual[kind].raw)} / ${kB(report.bundles.manual[kind].gzip)} | ${kB(report.bundles.baseline[kind].raw)} / ${kB(report.bundles.baseline[kind].gzip)} | ${signedKB(report.deltas[kind].raw.bytes)} (${report.deltas[kind].raw.percent}%) / ${signedKB(report.deltas[kind].gzip.bytes)} (${report.deltas[kind].gzip.percent}%) |`,
-  ),
-  "",
-  `Gzip delta vs baseline: compiler ${signedKB(report.baselineDeltas.compiler.total.gzip.bytes)} kB (${report.baselineDeltas.compiler.total.gzip.percent}%); manual ${signedKB(report.baselineDeltas.manual.total.gzip.bytes)} kB (${report.baselineDeltas.manual.total.gzip.percent}%).`,
-  "",
-  "Manifest entry JS, static imports, and attached CSS counted once per file. Source maps, dynamic imports, and profile builds excluded.",
-  `Separately loaded chunks: ${apps.map((app) => `${app} ${report.bundles[app].loadedLater.join(", ") || "none"}`).join("; ")}.`,
-  "",
-  "## User-perceived load time (UPLT)",
-  "",
-  "UPLT is navigation start to the full 200-row incident table completing two animation frames (a paint opportunity). Fresh isolated contexts, normal production builds, 4x CDP CPU slowdown, three runs alternating order; no network throttling. This is a lab proxy for user-perceived readiness, not a Core Web Vital or an input-response metric.",
-  "",
-  "| App | Median UPLT (ms) | Run 1 / 2 / 3 (ms) |",
-  "| --- | ---: | --- |",
-  ...apps.map(
-    (app) =>
-      `| ${app} | ${report.load[app].medianMs} | ${report.load[app].samplesMs.join(" / ")} |`,
-  ),
-  "",
-  ...loadMemoryMarkdown(report.loadMemory),
-  "## Selection responsiveness (normal production builds)",
-  "",
-  "Select INC-0001 from Platform after one warm-up; 20 open/close trials per app in isolated contexts with app order rotated each trial and 4x CDP CPU slowdown. Browser timing starts in the click handler and stops at the detail DOM mutation; the two-frame measurement is a paint opportunity, not a guaranteed painted frame. Playwright action latency and React profiling overhead are excluded. Differences of a few milliseconds are advisory, not CI gates; individual samples are in comparison.json.",
-  "",
-  "| App | Detail DOM median (ms) | Detail DOM p90 (ms) | Paint opportunity median (ms) | Paint opportunity p90 (ms) |",
-  "| --- | ---: | ---: | ---: | ---: |",
-  ...apps.map((app) => {
-    const timing = report.interactions.selection[app];
-    return `| ${app} | ${timing.medianDomMs} | ${timing.p90DomMs} | ${timing.medianPaintMs} | ${timing.p90PaintMs} |`;
-  }),
-  "",
-  "## Post-GC JS heap (normal build)",
-  "",
-  "Fresh Chromium contexts under 4x CPU slowdown. CDP Performance.JSHeapUsedSize is sampled after forced GC once after the table is ready and again after favoriting INC-0001; GC runs outside the UPLT and CPU-profile windows. Values are medians of three paired runs. This is renderer JavaScript heap, **not** DOM/native memory, total tab memory, or a leak test. Full per-run bytes are in comparison.json.",
-  "",
-  "| App | Before favorite (MiB) | After favorite (MiB) | Median change (KiB) |",
-  "| --- | ---: | ---: | ---: |",
-  ...apps.map(
-    (app) =>
-      `| ${app} | ${MiB(report.memory[app].beforeBytes)} | ${MiB(report.memory[app].afterBytes)} | ${round(report.memory[app].deltaBytes / 1024)} |`,
-  ),
-  "",
-  "## Lighthouse (mobile lab)",
-  "",
-  `Lighthouse ${report.versions.lighthouse}, ${report.lighthouse.settings.formFactor} preset with ${report.lighthouse.settings.throttlingMethod} throttling, normal builds. Three fresh Chrome launches per app, alternating order. Scores are 0-100; remaining timings are milliseconds and CLS is unitless. Median metrics are advisory and do not share the 4x CDP setup above. ${apps.map((app) => `[${app} raw audit](lighthouse-${app}.json)`).join(" / ")}.`,
-  "",
-  "| Metric | Compiler | Manual | Baseline | Delta (compiler - manual) |",
-  "| --- | ---: | ---: | ---: | ---: |",
-  ...[
-    ["Performance score", "performanceScore"],
-    ["Accessibility score", "accessibilityScore"],
-    ["FCP (ms)", "fcpMs"],
-    ["LCP (ms)", "lcpMs"],
-    ["TBT (ms)", "tbtMs"],
-    ["Speed Index (ms)", "speedIndexMs"],
-    ["CLS", "cls"],
-    ["Time to Interactive (ms)", "interactiveMs"],
-  ].map(
-    ([label, key]) =>
-      `| ${label} | ${report.lighthouse.compiler[key]} | ${report.lighthouse.manual[key]} | ${report.lighthouse.baseline[key]} | ${round(report.lighthouse.compiler[key] - report.lighthouse.manual[key], key === "cls" ? 3 : 1)} |`,
-  ),
-  "",
-  "## CPU slowdown flame charts",
-  "",
-  "One normal-build favorite-interaction trace per app at 4x CDP CPU slowdown. JS-active sampled time excludes V8 (idle) and (program) samples; it is an approximate slice of each trace window, **not** end-to-end interaction latency or a React render count. These separate single traces include Playwright-triggered work and cannot establish a performance winner.",
-  "",
-  "| App | Sampled window (ms) | JS-active sampled time (ms) | JS-active share |",
-  "| --- | ---: | ---: | ---: |",
-  ...apps.map(
-    (app) =>
-      `| ${app} | ${report.cpu[app].sampledMs} | ${report.cpu[app].activeJsMs} | ${report.cpu[app].activeSharePercent}% |`,
-  ),
-  "",
-  `In this one capture, ${[...apps].sort((left, right) => report.cpu[left].activeJsMs - report.cpu[right].activeJsMs)[0]} had the fewest JS-active sampled milliseconds; single CPU traces are too noisy to establish a repeatable winner.`,
-  "",
-  "The flame charts below show stack depth vertically and sampled time horizontally; hover for function/source. Each chart has its own time scale. Use the raw profiles in Chrome DevTools to investigate hotspots, not to compare chart widths directly.",
-  "",
-  ...apps.flatMap((app) => [
-    `### ${app} (${report.cpu[app].samples} samples / ${report.cpu[app].sampledMs} ms sampled)`,
-    "",
-    `![${app} CPU flame chart](${report.cpu[app].chart})`,
-    "",
-    `[Open raw ${app} CPU profile](${report.cpu[app].profile})`,
-    "",
-  ]),
-  "## Component work and committed updates (median of 3 runs)",
-  "",
-  `C = compiler; M = manual; B = baseline. A render-work event marks an already-mounted component whose React ${report.versions.react} profiling fiber records PerformedWork in a completed update. A component can contribute events in multiple commits. Events are **not milliseconds, equal-cost CPU operations, DOM mutations, or a complete function-invocation count**. Only whole-app commits come from the external root React \`<Profiler>\`; nested callbacks do not prove the wrapped component ran. These internal diagnostics are not additive or an API guaranteed across React releases.`,
-  "",
-  "| Action | Whole-app commits (C / M / B) | Queue render-work events (C / M / B) | Row render-work events (C / M / B) | Open-button events (C / M / B) | Favorite-button events (C / M / B) | Row event comparison |",
-  "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
-  ...report.actions.compiler.map((action, index) => {
-    const [compiler, manual, baseline] = apps.map((app) => report.actions[app][index]);
-    assert.ok(apps.every((app) => report.actions[app][index].name === action.name));
-    const triplet = (key) => `${compiler[key]} / ${manual[key]} / ${baseline[key]}`;
-    const comparison = rowComparison(compiler.rowRenders, manual.rowRenders, baseline.rowRenders);
-    return `| ${action.name} | ${triplet("commits")} | ${triplet("queueRenders")} | ${triplet("rowRenders")} | ${triplet("openButtonRenders")} | ${triplet("favoriteButtonRenders")} | ${comparison} |`;
-  }),
-  "",
-  "### Why equal row counts do not mean equal work",
-  "",
-  selectionEvidence(report.actions),
-  "",
-  report.rowCaching.explanation,
-  "",
-  `The explanation is scoped to oxc-transform-react ${report.versions.oxcTransformReact}, this workload and the inspected output, not every React Compiler implementation. [Compiler App snapshot](sources/compiler-App.js) / [Manual App snapshot](sources/manual-App.js) were captured from the measured production builds. They are post-transform, pre-bundle inspection artifacts; later bundling and minification can change the shipped code.`,
-  "",
-  ...(report.rowCaching.status === "recognized"
-    ? [
-        "<details>",
-        "<summary>Inspect the generated cache boundaries</summary>",
-        "",
-        ...report.rowCaching.excerpts.flatMap(({ label, code }) => [
-          `**${label}**`,
-          "",
-          "```js",
-          code,
-          "```",
-          "",
-        ]),
-        "</details>",
-        "",
-      ]
-    : []),
-  "### Reading the Profiler durations",
-  "",
-  "Root includes App and provider render bodies; shell, toolbar, list, detail, rows, queue items and buttons are inclusive subtree measurements. Overlapping root/parent/child durations are never summed into a total or treated as component self-time.",
-  "",
-  "ACTUAL (actualDuration) is the render work React measured for the profiled subtree in that commit. BASE (baseDuration) is React's estimated full-subtree render cost, derived from the most recently measured render cost of each component; it is not a separately measured unoptimized run. It can retain costs from earlier renders and does not undo useMemo or compiler caching or reconstruct their uncached calculation costs. BASE minus ACTUAL is not measured savings, and neither duration is event-handler, layout, paint or end-to-end interaction time.",
-  "",
-  "Whole-app commits count one external root callback per [rootId, rootGeneration, commitSequence]. Initial-load mounts are outside action windows; action mounts remain separate from update-event counts. Capture waits for semantic outcomes and completed batches for this synchronous workload, not arbitrary future asynchronous work. Search fills the input in bulk; sort and reset is an aggregate workflow.",
-  "",
-  "In [comparison.json](comparison.json), medianDurationMs (ACTUAL) and medianBaseDurationMs (BASE) are independently computed medians across per-run callback medians, not interaction totals. Mount summaries and per-run observations remain separate. null means no matching callback was observed, while 0 is a measured zero. Raw actual/base durations and lifecycle identities remain in [measurements.json](measurements.json).",
-  "",
-  "All Profiler durations are advisory milliseconds and include profiling overhead; they are never CI thresholds. Native profile-build measurements are separate from normal-build 4x CPU timings and browser sampling diagnostics. CPU profiles from benchmark:trace are separate browser sampling diagnostics.",
-  "",
-  ...ablationMarkdown(report.rowMemo),
-];
-writeFileSync(`${directory}/comparison.md`, lines.join("\n"));
+writeFileSync(`${directory}/comparison.md`, renderComparison(report));
 console.log(`Wrote ${directory}/comparison.json and comparison.md`);

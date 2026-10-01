@@ -6,6 +6,7 @@ import { Marked, Renderer } from "marked";
 import { parse, parseFragment, serialize } from "parse5";
 import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
 import { ablationFiles, loadAblationEvidence } from "./report-evidence.mjs";
+import { reportSections } from "./report-markdown.mjs";
 
 const output = "dist-pages";
 const appLabels = {
@@ -205,16 +206,32 @@ mkdirSync(reportDirectory, { recursive: true });
 assert.ok(report.evaluation?.recommendation, "Benchmark comparison is missing its evaluation");
 const defaultTable = Renderer.prototype.table;
 const defaultHeading = Renderer.prototype.heading;
+const defaultParagraph = Renderer.prototype.paragraph;
 const markdown = new Marked({ gfm: true });
 markdown.use({
   renderer: {
+    paragraph(token) {
+      const links = token.tokens.filter((entry) => entry.type === "link");
+      if (
+        links.length === reportSections.length &&
+        links.every((link, index) => link.href === `#${reportSections[index].id}`)
+      ) {
+        return `<nav class="report-nav" aria-label="Report sections">${links.map((link) => this.parser.parseInline([link])).join("")}</nav>`;
+      }
+      return defaultParagraph.call(this, token);
+    },
     heading(token) {
+      const section =
+        token.depth === 2 && reportSections.find((entry) => entry.title === token.text);
+      if (section) return `<h2 id="${section.id}">${this.parser.parseInline(token.tokens)}</h2>`;
       const heading = defaultHeading.call(this, token);
       if (token.depth !== 3 || token.text !== "Reading the Profiler durations") return heading;
-      return `${heading}<nav aria-label="Try profiling these apps"><p><strong>Try profiling these apps:</strong> ${Object.entries(
-        appLabels,
-      )
-        .map(([app, label]) => `<a href="../profile/${app}/">${label}</a>`)
+      return `${heading}<nav aria-label="Try profiling these apps"><p><strong>Try profiling these apps:</strong> ${[
+        "baseline",
+        "manual",
+        "compiler",
+      ]
+        .map((app) => `<a href="../profile/${app}/">${appLabels[app]}</a>`)
         .join(
           " / ",
         )}.</p><p>Open React DevTools, select its Profiler tab, and record an interaction. These production profiling builds include diagnostic overhead; normal builds remain the basis for the size and latency comparisons.</p></nav>`;
@@ -235,6 +252,7 @@ const artifacts = [
   "sources/manual-App.js",
   "slowdown.json",
   "selection-latency.json",
+  "filtering-latency.json",
   ...["compiler", "manual", "baseline"].flatMap((app) => [
     `favorite-${app}.svg`,
     `favorite-${app}.cpuprofile`,

@@ -1,6 +1,8 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createFiberRecorder } from "./fiber-recorder";
+import { filteringProtocol, filteringResultIds } from "./filtering.mjs";
+import { loadMemoryOrders } from "./load-memory.mjs";
 import {
   beginActionWindow,
   collectActionSnapshot,
@@ -204,6 +206,55 @@ async function scenario(page: Page, trace: boolean) {
   return { mounts: mounts.length, actions };
 }
 
+async function runFiltering(browser: Browser, app: AppName) {
+  const context = await browser.newContext({ viewport: filteringProtocol.viewport });
+  try {
+    const page = await context.newPage();
+    await installFiberRecorder(page);
+    await page.goto(origins[app]);
+    await expect(page.getByRole("row")).toHaveCount(201);
+    const initial = await snapshot(page, filteringProtocol.initialState);
+    expect(await page.locator("tbody .incident-id").allTextContents()).toEqual(
+      filteringProtocol.initialIds,
+    );
+    const actions = [];
+    for (const step of filteringProtocol.steps) {
+      const measured = await action(page, step.name, async () => {
+        const input = page.getByRole("textbox", { name: "Search incidents" });
+        if (step.query)
+          await input.pressSequentially(step.query.at(-1)!, {
+            delay: filteringProtocol.minimumKeyDelayMs,
+          });
+        else await input.fill("");
+        await expect(page.getByTestId("total")).toHaveText(String(step.rows));
+        await expect(page.getByRole("row")).toHaveCount(step.rows + 1);
+        expect(await page.locator("tbody .incident-id").allTextContents()).toEqual(
+          filteringResultIds(step.query),
+        );
+        return {
+          search: step.query,
+          rows: step.rows,
+          total: String(step.rows),
+          detailIncludes: "No incident selected",
+        };
+      });
+      const resultIds = await page.locator("tbody .incident-id").allTextContents();
+      actions.push({ ...measured, ...step, resultIds });
+    }
+    const remounts = actions
+      .at(-1)!
+      .records.filter((record) => record.phase === "mount" && record.id.startsWith("row:"));
+    expect(remounts).toHaveLength(166);
+    return {
+      initialState: filteringProtocol.initialState,
+      mounts: initial.records.length,
+      actions,
+    };
+  } finally {
+    await context.close();
+  }
+}
+
 async function run(browser: Browser, app: AppName, trace = false, screenshot = false) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   try {
@@ -214,7 +265,8 @@ async function run(browser: Browser, app: AppName, trace = false, screenshot = f
       await expect(page.getByRole("heading", { name: "Incident triage" })).toBeVisible();
       await page.screenshot({ path: `${directory}/${app}-desktop.png` });
     }
-    return await scenario(page, trace);
+    const workflow = await scenario(page, trace);
+    return { ...workflow, paths: { filtering: await runFiltering(browser, app) } };
   } finally {
     await context.close();
   }
@@ -236,6 +288,11 @@ test("matched incident workflows and profiling recorder", async ({ browser }) =>
     expect(results.compiler.actions.map((entry) => entry.state)).toEqual(
       results.baseline.actions.map((entry) => entry.state),
     );
+    for (const app of apps) {
+      expect(results[app].paths.filtering.actions.map((entry) => entry.state)).toEqual(
+        results.baseline.paths.filtering.actions.map((entry) => entry.state),
+      );
+    }
     const selectedRowRenders = (app: AppName) =>
       results[app].actions
         .find((entry) => entry.name === "select incident")!
@@ -372,10 +429,10 @@ test("normal-build painted table and favorite CPU at 4x slowdown", async ({ brow
     heapBeforeBytes: number;
     heapAfterBytes: number;
   };
-  const repetitions: Record<AppName, LoadSample>[] = [];
-  for (let repeat = 0; repeat < 3; repeat++) {
+  const repetitions: (Record<AppName, LoadSample> & { order: AppName[] })[] = [];
+  for (let repeat = 0; repeat < loadMemoryOrders.length; repeat++) {
     const results = {} as Record<AppName, LoadSample>;
-    const order = [...apps.slice(repeat), ...apps.slice(0, repeat)];
+    const order = loadMemoryOrders[repeat] as AppName[];
     for (const app of order) {
       const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       try {
@@ -435,7 +492,7 @@ test("normal-build painted table and favorite CPU at 4x slowdown", async ({ brow
         await context.close();
       }
     }
-    repetitions.push(results);
+    repetitions.push({ order, ...results });
   }
   writeFileSync(`${directory}/slowdown.json`, JSON.stringify({ cpuRate: 4, repetitions }, null, 2));
 });
@@ -552,6 +609,150 @@ test("normal-build selection responsiveness at 4x slowdown", async ({ browser })
     writeFileSync(
       `${directory}/selection-latency.json`,
       JSON.stringify({ cpuRate: 4, repetitions }, null, 2),
+    );
+  } finally {
+    for (const context of contexts) await context.close();
+  }
+});
+
+type FilteringSample = {
+  name: string;
+  query: string;
+  rows: number;
+  resultsChanged: boolean;
+  resultIds: string[];
+  domMs: number | null;
+  paintMs: number;
+};
+
+async function filteringCycle(page: Page): Promise<FilteringSample[]> {
+  const samples: FilteringSample[] = [];
+  const input = page.getByRole("textbox", { name: "Search incidents" });
+  await expect(input).toHaveValue("");
+  expect(await page.locator("tbody .incident-id").allTextContents()).toEqual(
+    filteringProtocol.initialIds,
+  );
+  for (const step of filteringProtocol.steps) {
+    await page.evaluate(
+      ({ step, expectedIds }) => {
+        const browserWindow = window as typeof window & {
+          __filteringTiming?: FilteringSample & { start: number };
+        };
+        const textbox = document.querySelector<HTMLInputElement>(
+          '[aria-label="Search incidents"]',
+        )!;
+        const ids = () =>
+          [...document.querySelectorAll("tbody .incident-id")].map(
+            (element) => element.textContent!,
+          );
+        const matches = () =>
+          textbox.value === step.query &&
+          JSON.stringify(ids()) === JSON.stringify(expectedIds) &&
+          document.querySelector('[data-testid="total"]')!.textContent === String(step.rows);
+        textbox.addEventListener(
+          "input",
+          () => {
+            const timing = {
+              ...step,
+              start: performance.now(),
+              domMs: null,
+              paintMs: 0,
+              resultIds: [],
+            } as FilteringSample & { start: number };
+            browserWindow.__filteringTiming = timing;
+            let observer: MutationObserver | undefined;
+            const finish = () => {
+              if (!matches()) return;
+              observer?.disconnect();
+              if (step.resultsChanged) timing.domMs = performance.now() - timing.start;
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  if (!matches()) return;
+                  timing.resultIds = ids();
+                  timing.paintMs = performance.now() - timing.start;
+                }),
+              );
+            };
+            if (step.resultsChanged) {
+              observer = new MutationObserver(finish);
+              observer.observe(document.getElementById("root")!, {
+                subtree: true,
+                childList: true,
+                characterData: true,
+              });
+            } else finish();
+          },
+          { once: true, capture: true },
+        );
+      },
+      { step, expectedIds: filteringResultIds(step.query) },
+    );
+    if (step.query)
+      await input.pressSequentially(step.query.at(-1)!, {
+        delay: filteringProtocol.minimumKeyDelayMs,
+      });
+    else await input.fill("");
+    await page.waitForFunction(
+      () =>
+        (window as typeof window & { __filteringTiming?: FilteringSample }).__filteringTiming!
+          .paintMs > 0,
+    );
+    const sample = await page.evaluate(() => {
+      const { start: _start, ...timing } = (
+        window as typeof window & {
+          __filteringTiming: FilteringSample & { start: number };
+        }
+      ).__filteringTiming;
+      return timing;
+    });
+    expect(sample.resultIds).toEqual(filteringResultIds(step.query));
+    expect(sample.domMs === null).toBe(!step.resultsChanged);
+    await expect(input).toHaveValue(step.query);
+    samples.push(sample);
+  }
+  return samples;
+}
+
+test("normal-build typed filtering and clearing at 4x slowdown", async ({ browser }) => {
+  test.setTimeout(180000);
+  mkdirSync(directory, { recursive: true });
+  const contexts: Awaited<ReturnType<Browser["newContext"]>>[] = [];
+  const pages = {} as Record<AppName, Page>;
+  const repetitions = [];
+  try {
+    for (const app of apps) {
+      const context = await browser.newContext({ viewport: filteringProtocol.viewport });
+      contexts.push(context);
+      const page = await context.newPage();
+      const cdp = await context.newCDPSession(page);
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+      await page.goto(productionOrigins[app]);
+      await expect(page.getByRole("row")).toHaveCount(201);
+      await expect(page.getByRole("dialog", { name: "Incident detail" })).toContainText(
+        "No incident selected",
+      );
+      await filteringCycle(page);
+      pages[app] = page;
+    }
+    for (let iteration = 0; iteration < 20; iteration++) {
+      const order = [...apps.slice(iteration % 3), ...apps.slice(0, iteration % 3)];
+      const samples = {} as Record<AppName, FilteringSample[]>;
+      for (const app of order) samples[app] = await filteringCycle(pages[app]);
+      repetitions.push({ order, ...samples });
+    }
+    writeFileSync(
+      `${directory}/filtering-latency.json`,
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          browser: browser.version(),
+          cpuRate: 4,
+          protocol: filteringProtocol,
+          repetitions,
+        },
+        null,
+        2,
+      ),
     );
   } finally {
     for (const context of contexts) await context.close();

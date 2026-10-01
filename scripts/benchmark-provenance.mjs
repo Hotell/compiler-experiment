@@ -10,6 +10,7 @@ export const measurementFiles = [
   "measurements.json",
   "slowdown.json",
   "selection-latency.json",
+  "filtering-latency.json",
   "lighthouse.json",
   "load-memory.json",
   ...apps.flatMap((app) => [`favorite-${app}.cpuprofile`, `lighthouse-${app}.json`]),
