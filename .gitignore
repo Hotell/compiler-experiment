@@ -23,3 +23,4 @@ benchmark/results/
 playwright-report/
 test-results/
 dist-pages/
+tmp/
