@@ -1,9 +1,11 @@
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { diffLines } from "diff";
 import { Marked, Renderer } from "marked";
 import { parse, parseFragment, serialize } from "parse5";
+import { build } from "vite";
 import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
 import { ablationFiles, loadAblationEvidence } from "./report-evidence.mjs";
 import { reportSections } from "./report-markdown.mjs";
@@ -50,6 +52,23 @@ for (const app of ["compiler", "manual", "baseline"]) {
 
 mkdirSync(output, { recursive: true });
 cpSync("site", output, { recursive: true, force: true });
+await build({
+  configFile: false,
+  publicDir: false,
+  logLevel: "warn",
+  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  build: {
+    outDir: `${output}/profile/scan`,
+    emptyOutDir: true,
+    license: { fileName: "LICENSE.md" },
+    lib: {
+      entry: resolve("scripts/profile-scan.js"),
+      formats: ["iife"],
+      name: "ProfileScan",
+      fileName: () => "react-scan.js",
+    },
+  },
+});
 for (const app of ["compiler", "manual", "baseline"]) {
   cpSync(`apps/${app}/dist`, `${output}/${app}`, {
     recursive: true,
@@ -63,6 +82,10 @@ for (const app of ["compiler", "manual", "baseline"]) {
   const body = html?.childNodes.find((node) => node.nodeName === "body");
   const title = head?.childNodes.find((node) => node.nodeName === "title");
   assert.ok(head && body && title, `${app} profiling document is incomplete`);
+  // A blocking classic script installs Scan's hook before the app's module executes.
+  const scanScript = parseFragment('<script src="../scan/react-scan.js"></script>').childNodes[0];
+  scanScript.parentNode = head;
+  head.childNodes.unshift(scanScript);
   title.childNodes = [
     {
       nodeName: "#text",
@@ -77,10 +100,12 @@ for (const app of ["compiler", "manual", "baseline"]) {
   const banner = parseFragment(`<aside class="profile-banner" aria-label="Profiling build">
     <div class="profile-banner-heading"><strong>Profiling enabled</strong><span>${appLabels[app]}</span><span>Production build / diagnostic overhead</span></div>
     <nav aria-label="Profiling navigation"><a href="../../">All implementations</a><a href="../../${app}/">Open normal build</a></nav>
+    <p>React Scan is enabled. Use its floating toolbar to inspect components or pause render highlighting.</p>
     <details><summary>How to profile</summary>
+      <p>React Scan highlights render activity without a browser extension. Its highlights are diagnostic hints, not proof that a component needs memoization. Production component names may be minified.</p>
       <p>Install the React DevTools browser extension and open its Profiler tab. Start recording, interact with the app, then stop recording.</p>
       <p>Our callback records also remain available in the console as <code>window.__benchmark.records</code>, including <code>actualDuration</code> and <code>baseDuration</code>. Use <code>window.__benchmark.clear()</code> between recordings to discard accumulated samples. Nothing is uploaded.</p>
-      <p>Profiling adds overhead. These pages are for diagnosis, not the published production-size or latency comparison.</p>
+      <p>React Scan and profiling add overhead. These pages are for diagnosis, not the published production-size or latency comparison. Scan is self-hosted; no telemetry is uploaded.</p>
     </details>
   </aside>`).childNodes[0];
   banner.parentNode = body;
@@ -234,7 +259,7 @@ markdown.use({
         .map((app) => `<a href="../profile/${app}/">${appLabels[app]}</a>`)
         .join(
           " / ",
-        )}.</p><p>Open React DevTools, select its Profiler tab, and record an interaction. These production profiling builds include diagnostic overhead; normal builds remain the basis for the size and latency comparisons.</p></nav>`;
+        )}.</p><p>Use the built-in React Scan toolbar for render highlighting and component inspection, or record an interaction in the React DevTools Profiler tab. These production profiling builds include diagnostic overhead; normal builds remain the basis for the size and latency comparisons.</p></nav>`;
     },
     table(token) {
       return `<div class="report-table-scroll">${defaultTable.call(this, token)}</div>`;

@@ -49,7 +49,11 @@ export async function checkDevtools(browser, base) {
                 queueMicrotask(() => receive({ event: "savedPreferences", payload: { componentFilters: [] } }));
             }
           });
-          window.__devtoolsCheck = { events, send: (event, payload) => receive({ event, payload }) };
+          window.__devtoolsCheck = {
+            events,
+            hook: window.__REACT_DEVTOOLS_GLOBAL_HOOK__,
+            send: (event, payload) => receive({ event, payload })
+          };
           backend.activate(window, { bridge });
         })();`,
       });
@@ -57,6 +61,18 @@ export async function checkDevtools(browser, base) {
       assert.equal(response.status(), 200);
       await page.getByRole("heading", { name: "Incident triage" }).waitFor();
       assert.deepEqual(errors, [], `${app} DevTools initialization errors`);
+      assert.equal(
+        await page.evaluate(
+          () => window.__REACT_DEVTOOLS_GLOBAL_HOOK__ === window.__devtoolsCheck.hook,
+        ),
+        true,
+        "Scan must preserve an already-installed React DevTools hook",
+      );
+      if (profiling)
+        await page
+          .locator("#react-scan-root")
+          .getByTitle("Inspect element", { exact: true })
+          .waitFor();
       await page.waitForFunction(() =>
         window.__devtoolsCheck.events.some((entry) => entry.event === "operations"),
       );

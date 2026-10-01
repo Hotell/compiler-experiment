@@ -117,13 +117,18 @@
       <details class="profiling-help">
         <summary>How to profile these apps</summary>
         <p>
-          Open a profiling build, install the React DevTools browser extension, and open its
-          Profiler tab. Start recording, select or favorite an incident, then stop recording.
+          Open a profiling build to use the built-in React Scan toolbar. Inspect components or pause
+          render highlighting without installing a browser extension.
         </p>
         <p>
-          These are production builds with profiling enabled, not development builds. Profiling adds
-          overhead: use them for diagnosis, not the published bundle-size or latency comparison. The
-          normal app links above remain uninstrumented.
+          For a recording, install the React DevTools browser extension and open its Profiler tab.
+          Start recording, select or favorite an incident, then stop recording.
+        </p>
+        <p>
+          These are production builds with profiling enabled, not development builds. React Scan and
+          profiling add overhead: use them for diagnosis, not the published bundle-size or latency
+          comparison. Highlights alone do not prove a component needs memoization. The normal app
+          links above remain uninstrumented.
         </p>
         <p>
           Without the extension, our callback records are available in the browser console as

@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { createServer } from "node:http";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, readdirSync, mkdirSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { checkDevtools } from "./check-devtools.mjs";
@@ -50,6 +50,19 @@ await new Promise((done) => server.listen(preview ? 4180 : 0, "127.0.0.1", done)
 if (preview) {
   console.log(`Pages preview: http://127.0.0.1:${server.address().port}${prefix}`);
 } else {
+  for (const app of ["compiler", "manual", "baseline"]) {
+    for (const mode of ["dist", "dist-profile-pages"]) {
+      const directory = `apps/${app}/${mode}`;
+      for (const file of readdirSync(directory, { recursive: true })) {
+        if (!/\.(js|html)$/.test(file)) continue;
+        assert.doesNotMatch(
+          readFileSync(join(directory, file), "utf8"),
+          /react-scan|__REACT_SCAN/,
+          `${directory}/${file}: Scan must only be injected during Pages assembly`,
+        );
+      }
+    }
+  }
   const undersizedText = (page) =>
     page.evaluate(() =>
       [...document.querySelectorAll("body *")]
@@ -77,6 +90,15 @@ if (preview) {
       const page = await browser.newPage({ viewport: { width, height } });
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
+      const externalRequests = [];
+      await page.route("**/*", (route) => {
+        const url = new URL(route.request().url());
+        if (url.origin !== new URL(base).origin && /^https?:$/.test(url.protocol)) {
+          externalRequests.push(url.href);
+          return route.abort();
+        }
+        return route.continue();
+      });
       const failedResources = [];
       page.on("requestfailed", (request) => failedResources.push(request.url()));
       page.on("response", (response) => {
@@ -157,6 +179,9 @@ if (preview) {
           `${app} normal build must omit the recorder`,
         );
         assert.equal(await page.locator(".profile-banner").count(), 0);
+        assert.equal(await page.locator("#react-scan-root").count(), 0);
+        assert.equal(await page.evaluate(() => window.__REACT_SCAN__), undefined);
+        assert.equal(await page.evaluate(() => window.__REACT_DEVTOOLS_GLOBAL_HOOK__), undefined);
         await page.goto(base);
         await page.locator(`.route-extra a[href="./profile/${app}/"]`).click();
         assert.equal(new URL(page.url()).pathname, `${prefix}profile/${app}/`);
@@ -167,17 +192,59 @@ if (preview) {
           `${app} profiling incidents must render`,
         );
         assert.match(await page.title(), /Profiling enabled/);
+        assert.deepEqual(
+          await page
+            .locator("head script")
+            .first()
+            .evaluate((script) => ({
+              src: script.getAttribute("src"),
+              type: script.type,
+              async: script.async,
+              defer: script.defer,
+            })),
+          { src: "../scan/react-scan.js", type: "", async: false, defer: false },
+          "Scan must load synchronously before the React entry module",
+        );
         assert.equal(await page.getByText("Profiling enabled", { exact: true }).count(), 1);
         assert.equal(
           await page.locator("#root .profile-banner").count(),
           0,
           "Profile banner must stay outside the React tree",
         );
+        const toolbar = page.locator("#react-scan-root #react-scan-toolbar-root");
+        await toolbar.getByTitle("Inspect element", { exact: true }).waitFor();
+        assert.equal(await page.locator("#root #react-scan-root").count(), 0);
         assert.equal(
-          await page.evaluate(() => window.__REACT_DEVTOOLS_GLOBAL_HOOK__),
-          undefined,
-          "Hosted app must not install or replace the visitor's DevTools hook",
+          await toolbar.getByTitle("Inspect element", { exact: true }).isVisible(),
+          true,
         );
+        const scanState = await page.evaluate(() => {
+          const scan = window.__REACT_SCAN__.ReactScanInternals;
+          return {
+            production: scan.options.value.dangerouslyForceRunInProduction,
+            paused: scan.instrumentation.isPaused.value,
+            renderers: window.__REACT_DEVTOOLS_GLOBAL_HOOK__.renderers.size,
+          };
+        });
+        assert.deepEqual(scanState, {
+          production: true,
+          paused: false,
+          renderers: 1,
+        });
+        await toolbar.getByTitle("Outline Re-renders", { exact: true }).click();
+        await page.waitForFunction(
+          () => window.__REACT_SCAN__.ReactScanInternals.instrumentation.isPaused.value,
+        );
+        await toolbar.getByTitle("Outline Re-renders", { exact: true }).click();
+        await page.waitForFunction(
+          () => !window.__REACT_SCAN__.ReactScanInternals.instrumentation.isPaused.value,
+        );
+        await page.evaluate(() => {
+          window.__scanRenderCount = 0;
+          window.__REACT_SCAN__.ReactScanInternals.options.value.onRender = () => {
+            window.__scanRenderCount++;
+          };
+        });
         assert.equal(
           await page.evaluate(() => window.__fiberBenchmark),
           undefined,
@@ -216,6 +283,27 @@ if (preview) {
           return window.__benchmark.records;
         });
         assert.ok(updates.filter((record) => record.id === "root").length >= 3);
+        assert.ok(
+          (await page.evaluate(() => window.__scanRenderCount)) > 0,
+          `${app}: Scan must observe real app renders, not only display a toolbar`,
+        );
+        await toolbar.getByTitle("Inspect element", { exact: true }).click();
+        await page.waitForFunction(
+          () =>
+            window.__REACT_SCAN__.ReactScanInternals.Store.inspectState.value.kind === "inspecting",
+        );
+        await page.locator("#root h1").click();
+        await page.waitForFunction(
+          () =>
+            window.__REACT_SCAN__.ReactScanInternals.Store.inspectState.value.kind === "focused",
+        );
+        await toolbar.getByTitle("Inspect element", { exact: true }).click();
+        await toolbar.getByTitle("Inspect element", { exact: true }).click();
+        await page.waitForFunction(
+          () =>
+            window.__REACT_SCAN__.ReactScanInternals.Store.inspectState.value.kind ===
+            "inspect-off",
+        );
         for (const record of [...mounts, ...updates]) {
           assert.ok(Number.isFinite(record.actualDuration) && record.actualDuration >= 0);
           assert.ok(Number.isFinite(record.baseDuration) && record.baseDuration >= 0);
@@ -230,6 +318,7 @@ if (preview) {
             .evaluate((banner) => banner.scrollWidth <= banner.clientWidth),
           `${name} ${app} profiling banner overflows`,
         );
+        await page.screenshot({ path: `benchmark/results/profile-${app}-${name}.png` });
         await page.evaluate(() => window.__benchmark.clear());
         assert.equal(await page.evaluate(() => window.__benchmark.records.length), 0);
         await page.getByRole("link", { name: "Open normal build", exact: true }).click();
@@ -529,6 +618,7 @@ if (preview) {
         );
       }
       assert.deepEqual(errors, [], `${name} browser errors`);
+      assert.deepEqual(externalRequests, [], `${name} profiling must not contact third parties`);
       assert.deepEqual(failedResources, [], `${name} resource failures`);
       await page.close();
     }
