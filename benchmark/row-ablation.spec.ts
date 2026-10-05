@@ -130,7 +130,7 @@ async function expectInitialState(page: Page) {
   await expect(
     page.getByRole("button", { name: "Favorite INC-0001", exact: true }),
   ).toHaveAttribute("aria-pressed", "false");
-  await expect(page.getByTestId("reviews")).toHaveText("0");
+  await expect(page.getByTestId("notifications")).toHaveText("3");
 }
 
 async function expectActionState(page: Page, name: ActionName, activityBefore: number) {
@@ -214,7 +214,7 @@ async function runProfileScenario(browser: Browser, arm: Arm): Promise<ProfileSc
     await page.goto(origins[arm].profile);
     await expectInitialState(page);
     expect(await page.evaluate(() => window.__benchmark?.schemaVersion)).toBe(2);
-    await profileSnapshot(page, { total: "200", rows: 200, reviews: "0", favorite: false });
+    await profileSnapshot(page, { total: "200", rows: 200, notifications: "3", favorite: false });
     const actions: ProfileAction[] = [];
     for (const name of actionNames) {
       await page.evaluate(beginActionWindow);
@@ -250,7 +250,7 @@ function productionState() {
   return JSON.stringify({
     main: element("main").innerText,
     detail: element('[aria-label="Incident detail"]').innerText,
-    reviews: element('[data-testid="reviews"]').innerText,
+    notifications: element('[data-testid="notifications"]').innerText,
     favorite: document.querySelectorAll('tbody [aria-pressed="true"]').length,
     queue: element('[aria-label="Incident queues"] [aria-current="page"]').textContent,
     search: element<HTMLInputElement>('[aria-label="Search incidents"]').value,

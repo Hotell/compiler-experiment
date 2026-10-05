@@ -112,7 +112,7 @@ for (const app of ["compiler", "manual", "baseline"]) {
   body.childNodes.unshift(banner);
   writeFileSync(`${profileDirectory}/index.html`, serialize(document));
 }
-const modules = ["App", "providers", "controls", "incidents", "main", "recorder"];
+const modules = ["App", "providers", "controls", "workspace", "incidents", "main", "recorder"];
 const pairs = [
   ["compiler", "baseline"],
   ["compiler", "manual"],

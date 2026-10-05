@@ -73,16 +73,19 @@ async function scenario(page: Page, trace: boolean) {
   await expect(
     page.getByRole("navigation", { name: "Incident queues" }).locator("svg"),
   ).toHaveCount(4);
-  const initial = await snapshot(page, { rows: 200, total: "200", reviews: "0" });
+  const initial = await snapshot(page, { rows: 200, total: "200", notifications: "3" });
   const mounts = initial.records.filter((record) => record.phase === "mount");
   const actions: Action[] = [];
+  await page.getByRole("button", { name: "Open notifications" }).click();
+  await expect(page.getByRole("dialog", { name: "Notifications", exact: true })).toBeVisible();
   actions.push(
-    await action(page, "header review", async () => {
-      await page.getByRole("button", { name: "Add review" }).click();
-      await expect(page.getByTestId("reviews")).toHaveText("1");
-      return { reviews: "1" };
+    await action(page, "read notifications", async () => {
+      await page.getByRole("button", { name: "Mark all as read" }).click();
+      await expect(page.getByTestId("notifications")).toHaveText("0");
+      return { notifications: "0" };
     }),
   );
+  await page.getByRole("button", { name: "Close Notifications", exact: true }).click();
   expect(
     actions[0].records.filter((record) => record.phase !== "mount" && record.id.startsWith("row:")),
   ).toHaveLength(0);
@@ -351,7 +354,7 @@ test("profile boundary coverage, no-op windows and remount lifetimes", async ({ 
       await installFiberRecorder(page);
       await page.goto(origins[app]);
       await expect(page.getByRole("row")).toHaveCount(201);
-      const initial = await snapshot(page, { rows: 200, reviews: "0" });
+      const initial = await snapshot(page, { rows: 200, notifications: "3" });
       const visibleIds = await page.locator("tbody .incident-id").allTextContents();
       const persistent = ["root", "shell", "toolbar", "list", "detail"];
       const expected = [
@@ -380,14 +383,17 @@ test("profile boundary coverage, no-op windows and remount lifetimes", async ({ 
       expect(noop.fiberCommits).toEqual([]);
       expect(noop.fiberRenders).toEqual([]);
 
-      const review = await action(page, "provider update", async () => {
-        await page.getByRole("button", { name: "Add review" }).click();
-        await expect(page.getByTestId("reviews")).toHaveText("1");
-        return { reviews: "1" };
+      await page.getByRole("button", { name: "Open notifications" }).click();
+      await expect(page.getByRole("dialog", { name: "Notifications", exact: true })).toBeVisible();
+      const notification = await action(page, "provider update", async () => {
+        await page.getByRole("button", { name: "Mark all as read" }).click();
+        await expect(page.getByTestId("notifications")).toHaveText("0");
+        return { notifications: "0" };
       });
-      expect(review.records.filter((record) => record.id === "root")).toHaveLength(1);
-      expect(review.records.find((record) => record.id === "root")?.phase).toBe("update");
-      expect(review.fiberRenders).toEqual([]);
+      expect(notification.records.filter((record) => record.id === "root")).toHaveLength(1);
+      expect(notification.records.find((record) => record.id === "root")?.phase).toBe("update");
+      expect(notification.fiberRenders).toEqual([]);
+      await page.getByRole("button", { name: "Close Notifications", exact: true }).click();
 
       const empty = await action(page, "empty search", async () => {
         await page.getByRole("textbox", { name: "Search incidents" }).fill("not-an-incident");

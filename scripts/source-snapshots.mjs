@@ -9,6 +9,7 @@ export function sourceSnapshots(app) {
     App: app === "manual" ? "apps/manual/src/App.tsx" : "shared/App.tsx",
     providers: app === "manual" ? "apps/manual/src/providers.tsx" : "shared/providers.tsx",
     controls: "shared/controls.tsx",
+    workspace: "shared/workspace.tsx",
     incidents: "shared/incidents.ts",
     main: `apps/${app}/src/main.tsx`,
     recorder: "benchmark/recorder.tsx",

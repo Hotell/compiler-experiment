@@ -290,6 +290,30 @@ if (preview) {
           (await page.evaluate(() => window.__scanRenderCount)) > 0,
           `${app}: Scan must observe real app renders, not only display a toolbar`,
         );
+        const favorites = page.getByRole("button", { name: "Favorites only", exact: true });
+        await favorites.click();
+        assert.deepEqual(await page.locator("tbody .incident-id").allTextContents(), ["INC-0001"]);
+        await favorites.click();
+        await page.getByRole("button", { name: "Open notifications", exact: true }).click();
+        const inbox = page.getByRole("dialog", { name: "Notifications", exact: true });
+        await inbox.waitFor();
+        await inbox.getByRole("button", { name: "Mark all as read", exact: true }).click();
+        assert.equal(await page.getByTestId("notifications").innerText(), "0");
+        await page.keyboard.press("Escape");
+        await inbox.waitFor({ state: "detached" });
+        await page
+          .getByRole("button", { name: "Profile settings for Alex Chen", exact: true })
+          .click();
+        const settings = page.getByRole("dialog", { name: "Profile settings", exact: true });
+        await settings.waitFor();
+        await settings.getByRole("button", { name: "Cancel", exact: true }).click();
+        await page.getByRole("button", { name: "Open operations desk", exact: true }).click();
+        const operations = page.getByRole("dialog", { name: "Operations desk", exact: true });
+        await operations.waitFor();
+        assert.match(await operations.innerText(), /134 active incidents across three queues/);
+        await operations
+          .getByRole("button", { name: "Close Operations desk", exact: true })
+          .click();
         const heading = page.locator("#root h1");
         await heading.scrollIntoViewIfNeeded();
         const bounds = await heading.boundingBox();

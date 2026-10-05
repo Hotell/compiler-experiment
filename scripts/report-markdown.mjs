@@ -283,7 +283,7 @@ export function renderComparison(report) {
     ...section("evidence"),
     "### Component work and committed updates (median of 3 runs)",
     "",
-    "Additional actions come from the existing stateful workflow: review, Platform queue, selection, favorite, bulk search INC-0001, status filter, sort/reset, resolve. The bulk search is not the independent typed-query benchmark above; sort/reset combines four operations. No production latency is claimed for these additional actions.",
+    "Additional actions come from the existing stateful workflow: mark all notifications read, Platform queue, selection, favorite, bulk search INC-0001, status filter, sort/reset, resolve. The inbox is opened before and closed after the measured notification acknowledgment. The bulk search is not the independent typed-query benchmark above; sort/reset combines four operations. No production latency is claimed for these additional actions.",
     "",
     ...report.actions.baseline
       .filter((action) => action.name !== "select incident")

@@ -18,7 +18,7 @@
     "verify:push": "yarn benchmark:all && yarn check:pages",
     "build:profile": "yarn workspace @experiment/compiler build:profile && yarn workspace @experiment/manual build:profile && yarn workspace @experiment/baseline build:profile",
     "benchmark": "yarn fmt:check && yarn lint && node scripts/check-guard.mjs && node --test benchmark/capture.test.mjs benchmark/load-memory.test.mjs scripts/report-evidence.test.mjs && yarn typecheck && yarn typecheck:measure && yarn typecheck:load-memory && node scripts/run-benchmark.mjs && node scripts/report.mjs && node --test scripts/report.test.mjs",
-    "typecheck:measure": "tsc --noEmit --allowJs --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --jsx react-jsx --strict --skipLibCheck --types node,vite/client benchmark/measure.spec.ts",
+    "typecheck:measure": "tsc --noEmit --allowJs --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --jsx react-jsx --strict --skipLibCheck --types node,vite/client benchmark/measure.spec.ts benchmark/workspace.spec.ts",
     "typecheck:load-memory": "tsc --noEmit --allowJs --target ES2022 --lib ES2022,DOM,DOM.Iterable --module ESNext --moduleResolution Bundler --strict --skipLibCheck --types node benchmark/load-memory.spec.ts",
     "benchmark:all": "yarn benchmark && yarn benchmark:row-memo && node scripts/report.mjs --require-ablation && node --test scripts/report.test.mjs",
     "benchmark:trace": "BENCHMARK_TRACE=1 yarn benchmark",

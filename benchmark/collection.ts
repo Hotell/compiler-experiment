@@ -2,7 +2,7 @@ import type { RenderRecord } from "./recorder";
 import type { FiberCommit } from "./fiber-recorder";
 
 export type Outcome = {
-  reviews?: string;
+  notifications?: string;
   total?: string;
   queue?: string;
   search?: string;
@@ -63,10 +63,10 @@ export async function collectActionSnapshot({
   }
   const main = element("main").innerText;
   const detail = element('[aria-label="Incident detail"]').innerText;
-  const reviews = element('[data-testid="reviews"]').innerText;
+  const notifications = element('[data-testid="notifications"]').innerText;
   const favorite = document.querySelectorAll('[aria-label="Unfavorite INC-0001"]').length;
   const actual = {
-    reviews,
+    notifications,
     total: element('[data-testid="total"]').innerText,
     queue: element('[aria-label="Incident queues"] [aria-current="page"]').textContent?.trim(),
     search: element<HTMLInputElement>('[aria-label="Search incidents"]').value,
@@ -113,7 +113,7 @@ export async function collectActionSnapshot({
       records,
       fiberRenders: fiberCommits.flatMap((commit) => commit.renders),
       fiberCommits,
-      state: JSON.stringify({ main, detail, reviews, favorite }),
+      state: JSON.stringify({ main, detail, notifications, favorite }),
     },
   };
 }

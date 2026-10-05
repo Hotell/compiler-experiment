@@ -287,7 +287,7 @@ function browserFixture() {
   const elements = new Map([
     ["main", { innerText: "Incidents" }],
     ['[aria-label="Incident detail"]', { innerText: "No incident selected" }],
-    ['[data-testid="reviews"]', { innerText: "0" }],
+    ['[data-testid="notifications"]', { innerText: "0" }],
     ['[data-testid="total"]', { innerText: "0" }],
     ['[aria-label="Incident queues"] [aria-current="page"]', { textContent: "All incidents200" }],
     ['[aria-label="Search incidents"]', { value: "" }],
@@ -306,7 +306,7 @@ function browserFixture() {
 
 test("atomic collection supports no-op windows and preserves lifetime/commit state across clear", async () => {
   const fixture = browserFixture();
-  const initial = await collectActionSnapshot({ outcome: { reviews: "0", rows: 0 } });
+  const initial = await collectActionSnapshot({ outcome: { notifications: "0", rows: 0 } });
   assert.equal(initial.status, "complete");
   beginActionWindow();
   const empty = await collectActionSnapshot({ outcome: {}, allowNoCommit: true });
@@ -319,12 +319,12 @@ test("atomic collection supports no-op windows and preserves lifetime/commit sta
   assert.equal(updating.status, "retry");
   assert.match(updating.reason, /no completed root/);
   fixture.commit();
-  fixture.elements.get('[data-testid="reviews"]').innerText = "1";
-  const complete = await collectActionSnapshot({ outcome: { reviews: "1" } });
+  fixture.elements.get('[data-testid="notifications"]').innerText = "1";
+  const complete = await collectActionSnapshot({ outcome: { notifications: "1" } });
   assert.equal(complete.status, "complete");
   assert.equal(complete.sample.records[0].commitSequence, 2);
   assert.equal(complete.sample.fiberCommits[0].commitSequence, 2);
-  assert.equal(JSON.parse(complete.sample.state).reviews, "1");
+  assert.equal(JSON.parse(complete.sample.state).notifications, "1");
   fixture.recorder.clear();
   fixture.fibers.clear();
   assert.equal(complete.sample.records.length, 1);
@@ -338,9 +338,9 @@ test("collection retries serial/outcome changes and demands completion of every 
   const changing = collectActionSnapshot({ outcome: {} });
   fixture.commit();
   assert.deepEqual(await changing, { status: "retry", reason: "commit serial changed" });
-  const semantic = await collectActionSnapshot({ outcome: { reviews: "1" } });
+  const semantic = await collectActionSnapshot({ outcome: { notifications: "1" } });
   assert.equal(semantic.status, "retry");
-  assert.match(semantic.reason, /reviews does not match/);
+  assert.match(semantic.reason, /notifications does not match/);
   const nextOperation = await collectActionSnapshot({
     outcome: {},
     afterSerial: fixture.recorder.serial,
@@ -457,7 +457,8 @@ for (const file of ["../shared/App.tsx", "../apps/manual/src/App.tsx"]) {
       if (ts.isJsxElement(parent)) providers.push(tag(parent));
     }
     assert.deepEqual(providers, [
-      "ReviewProvider",
+      "NotificationProvider",
+      "SettingsProvider",
       "SelectionProvider",
       "FilterProvider",
       "IncidentProvider",

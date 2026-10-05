@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, type KeyboardEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import {
   Activity,
   ArrowDownUp,
@@ -22,16 +22,19 @@ import {
 } from "../../../shared/incidents";
 import { Profiled } from "../../../benchmark/recorder";
 import { Button, Select, StatusBadge, TextInput } from "../../../shared/controls";
+import { NotificationsDialog, OperationsDialog, ProfileDialog } from "../../../shared/workspace";
 import {
   FilterProvider,
   IncidentProvider,
-  ReviewProvider,
+  NotificationProvider,
+  SettingsProvider,
   SelectionProvider,
   WorkspaceProvider,
   useFilters,
   useIncidentActions,
   useIncidents,
-  useReviews,
+  useNotifications,
+  useUserSettings,
   useSelection,
   useSelectionActions,
   useWorkspace,
@@ -40,7 +43,32 @@ import {
 declare const __ROW_MEMO_ENABLED__: boolean;
 
 function Header() {
-  const { reviews, addReview } = useReviews();
+  const { notifications, markRead, markAllRead } = useNotifications();
+  const { settings, saveSettings } = useUserSettings();
+  const { incidents } = useIncidents();
+  const { setSelectedId } = useSelectionActions();
+  const { setQueue } = useWorkspace();
+  const { setSearch, setStatus, setFavoritesOnly } = useFilters();
+  const [panel, setPanel] = useState<"notifications" | "profile" | null>(null);
+  const unread = notifications.filter((item) => !item.read).length;
+  const initials = settings.displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+  const openNotification = useCallback(
+    (id: string) => {
+      markRead(id);
+      setQueue("All incidents");
+      setSearch("");
+      setStatus("All statuses");
+      setFavoritesOnly(false);
+      setSelectedId(id);
+      setPanel(null);
+    },
+    [markRead, setQueue, setSearch, setStatus, setFavoritesOnly, setSelectedId],
+  );
   return (
     <header className="topbar">
       <div className="brand">
@@ -56,13 +84,36 @@ function Header() {
         <span className="environment">
           <span className="live-dot" /> Production
         </span>
-        <Button className="review-button" onClick={addReview} aria-label="Add review">
-          <Bell size={16} /> Reviews <strong data-testid="reviews">{reviews}</strong>
+        <Button
+          className="notification-button"
+          onClick={() => setPanel("notifications")}
+          aria-label="Open notifications"
+          aria-haspopup="dialog"
+        >
+          <Bell size={16} /> Notifications <strong data-testid="notifications">{unread}</strong>
         </Button>
-        <span className="avatar" aria-label="Signed in as Alex Chen">
-          AC
-        </span>
+        <Button
+          className="avatar"
+          aria-label={`Profile settings for ${settings.displayName}`}
+          aria-haspopup="dialog"
+          onClick={() => setPanel("profile")}
+        >
+          {initials}
+        </Button>
       </div>
+      {panel === "notifications" && (
+        <NotificationsDialog
+          notifications={notifications}
+          incidents={incidents}
+          onRead={markRead}
+          onReadAll={markAllRead}
+          onOpen={openNotification}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === "profile" && (
+        <ProfileDialog settings={settings} onSave={saveSettings} onClose={() => setPanel(null)} />
+      )}
     </header>
   );
 }
@@ -121,17 +172,52 @@ function QueueNavigation({
   );
 }
 function SidebarFooter() {
+  const { incidents } = useIncidents();
+  const { setQueue } = useWorkspace();
+  const { setSelectedId } = useSelectionActions();
+  const { setSearch, setStatus, setSort, setFavoritesOnly } = useFilters();
+  const [open, setOpen] = useState(false);
+  const active = useMemo(
+    () => incidents.filter((incident) => incident.status !== "Resolved").length,
+    [incidents],
+  );
+  const navigate = useCallback(
+    (queue: Queue) => {
+      setQueue(queue);
+      setSearch("");
+      setStatus("All statuses");
+      setSort("newest");
+      setFavoritesOnly(false);
+      setSelectedId(null);
+      setOpen(false);
+    },
+    [setQueue, setSearch, setStatus, setSort, setFavoritesOnly, setSelectedId],
+  );
   return (
-    <div className="sidebar-footer">
-      <div className="sidebar-footer-icon">
-        <CircleAlert size={17} />
-      </div>
-      <div>
-        <strong>Operations desk</strong>
-        <small>Monitoring all systems</small>
-      </div>
-      <span className="live-dot" />
-    </div>
+    <>
+      <Button
+        className="sidebar-footer"
+        aria-label="Open operations desk"
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+      >
+        <span className="sidebar-footer-icon">
+          <CircleAlert size={17} />
+        </span>
+        <span>
+          <strong>Operations desk</strong>
+          <small>{active} active incidents</small>
+        </span>
+        <span className="live-dot" />
+      </Button>
+      {open && (
+        <OperationsDialog
+          incidents={incidents}
+          onNavigate={navigate}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }
 function Sidebar() {
@@ -148,7 +234,8 @@ function Sidebar() {
   );
 }
 function Toolbar({ incidents }: { incidents: Incident[] }) {
-  const { search, setSearch, status, setStatus, sort, setSort } = useFilters();
+  const { search, setSearch, status, setStatus, sort, setSort, favoritesOnly, setFavoritesOnly } =
+    useFilters();
   const count = incidents.length;
   const statusCounts = statuses.map(
     (item) => incidents.filter((incident) => incident.status === item).length,
@@ -211,6 +298,14 @@ function Toolbar({ incidents }: { incidents: Incident[] }) {
           <p>Manage and track your active incidents</p>
         </div>
         <div className="filters">
+          <Button
+            className="favorites-filter"
+            aria-label="Favorites only"
+            aria-pressed={favoritesOnly}
+            onClick={() => setFavoritesOnly(!favoritesOnly)}
+          >
+            <Star size={16} fill={favoritesOnly ? "currentColor" : "none"} /> Favorites
+          </Button>
           <label className="search-field" htmlFor="incident-search">
             <Search size={16} />
             <TextInput
@@ -478,13 +573,14 @@ const Detail = memo(function Detail() {
 function Shell() {
   const { incidents } = useIncidents();
   const { queue } = useWorkspace();
-  const { search, status, sort } = useFilters();
+  const { search, status, sort, favoritesOnly } = useFilters();
+  const { settings } = useUserSettings();
   const visible = useMemo(
-    () => visibleIncidents(incidents, queue, search, status, sort),
-    [incidents, queue, search, status, sort],
+    () => visibleIncidents(incidents, queue, search, status, sort, favoritesOnly),
+    [incidents, queue, search, status, sort, favoritesOnly],
   );
   return (
-    <div className="app">
+    <div className="app" data-density={settings.density}>
       <Header />
       <div className="workspace">
         <Sidebar />
@@ -509,11 +605,13 @@ export default function App() {
       <IncidentProvider>
         <FilterProvider>
           <SelectionProvider>
-            <ReviewProvider>
-              <Profiled id="shell">
-                <Shell />
-              </Profiled>
-            </ReviewProvider>
+            <SettingsProvider>
+              <NotificationProvider>
+                <Profiled id="shell">
+                  <Shell />
+                </Profiled>
+              </NotificationProvider>
+            </SettingsProvider>
           </SelectionProvider>
         </FilterProvider>
       </IncidentProvider>

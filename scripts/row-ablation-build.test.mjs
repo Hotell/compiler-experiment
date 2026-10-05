@@ -284,8 +284,8 @@ test("the sole intervention is the outer row memo; child memo and callbacks rema
     ),
     ["QueueItem", "OpenIncidentButton", "FavoriteButton", "IncidentRowImpl", "Detail"],
   );
-  assert.equal(calls(source, "useCallback").length, 3);
-  assert.equal(calls(source, "useMemo").length, 1);
+  assert.equal(calls(source, "useCallback").length, 5);
+  assert.equal(calls(source, "useMemo").length, 2);
   for (const [name, body, dependencies] of [
     ["selectQueue", "onSelect(item)", "[item, onSelect]"],
     ["openIncident", "setSelectedId(incident.id)", "[incident.id, setSelectedId]"],
@@ -297,8 +297,8 @@ test("the sole intervention is the outer row memo; child memo and callbacks rema
     assert.equal(callback.arguments[1].getText(), dependencies);
   }
   const providers = parse(readFileSync(join(appRoot, "src/providers.tsx"), "utf8"));
-  assert.equal(calls(providers, "useMemo").length, 7);
-  assert.equal(calls(providers, "useCallback").length, 3);
+  assert.equal(calls(providers, "useMemo").length, 8);
+  assert.equal(calls(providers, "useCallback").length, 4);
   assert.equal(all(providers, (node) => ts.isIdentifier(node) && node.text === flag).length, 0);
 });
 

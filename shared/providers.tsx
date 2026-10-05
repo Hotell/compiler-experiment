@@ -1,5 +1,13 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { initialIncidents, type Incident, type Queue } from "./incidents";
+import {
+  initialIncidents,
+  initialNotifications,
+  initialSettings,
+  type Incident,
+  type Notification,
+  type Queue,
+  type UserSettings,
+} from "./incidents";
 
 type WorkspaceValue = { queue: Queue; setQueue: (queue: Queue) => void };
 type IncidentValue = {
@@ -14,9 +22,16 @@ type FilterValue = {
   setStatus: (value: string) => void;
   sort: string;
   setSort: (value: string) => void;
+  favoritesOnly: boolean;
+  setFavoritesOnly: (value: boolean) => void;
 };
 type SelectionValue = { selectedId: string | null; setSelectedId: (id: string | null) => void };
-type ReviewValue = { reviews: number; addReview: () => void };
+type NotificationValue = {
+  notifications: Notification[];
+  markRead: (incidentId: string) => void;
+  markAllRead: () => void;
+};
+type SettingsValue = { settings: UserSettings; saveSettings: (settings: UserSettings) => void };
 
 const WorkspaceContext = createContext<WorkspaceValue | null>(null);
 const IncidentContext = createContext<IncidentValue | null>(null);
@@ -27,7 +42,8 @@ const IncidentActionsContext = createContext<Pick<
 const FilterContext = createContext<FilterValue | null>(null);
 const SelectionContext = createContext<SelectionValue | null>(null);
 const SelectionActionsContext = createContext<Pick<SelectionValue, "setSelectedId"> | null>(null);
-const ReviewContext = createContext<ReviewValue | null>(null);
+const NotificationContext = createContext<NotificationValue | null>(null);
+const SettingsContext = createContext<SettingsValue | null>(null);
 
 function useRequired<T>(value: T | null): T {
   if (!value) throw new Error("Missing incident workspace provider");
@@ -39,7 +55,8 @@ export const useIncidentActions = () => useRequired(useContext(IncidentActionsCo
 export const useFilters = () => useRequired(useContext(FilterContext));
 export const useSelection = () => useRequired(useContext(SelectionContext));
 export const useSelectionActions = () => useRequired(useContext(SelectionActionsContext));
-export const useReviews = () => useRequired(useContext(ReviewContext));
+export const useNotifications = () => useRequired(useContext(NotificationContext));
+export const useUserSettings = () => useRequired(useContext(SettingsContext));
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<Queue>("All incidents");
@@ -81,8 +98,20 @@ export function FilterProvider({ children }: { children: ReactNode }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All statuses");
   const [sort, setSort] = useState("newest");
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
   return (
-    <FilterContext value={{ search, setSearch, status, setStatus, sort, setSort }}>
+    <FilterContext
+      value={{
+        search,
+        setSearch,
+        status,
+        setStatus,
+        sort,
+        setSort,
+        favoritesOnly,
+        setFavoritesOnly,
+      }}
+    >
       {children}
     </FilterContext>
   );
@@ -95,8 +124,21 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     </SelectionActionsContext>
   );
 }
-export function ReviewProvider({ children }: { children: ReactNode }) {
-  const [reviews, setReviews] = useState(0);
-  const addReview = () => setReviews((value) => value + 1);
-  return <ReviewContext value={{ reviews, addReview }}>{children}</ReviewContext>;
+export function NotificationProvider({ children }: { children: ReactNode }) {
+  const [notifications, setNotifications] = useState(initialNotifications);
+  const markRead = (incidentId: string) =>
+    setNotifications((current) =>
+      current.map((item) => (item.incidentId === incidentId ? { ...item, read: true } : item)),
+    );
+  const markAllRead = () =>
+    setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+  return (
+    <NotificationContext value={{ notifications, markRead, markAllRead }}>
+      {children}
+    </NotificationContext>
+  );
+}
+export function SettingsProvider({ children }: { children: ReactNode }) {
+  const [settings, saveSettings] = useState(initialSettings);
+  return <SettingsContext value={{ settings, saveSettings }}>{children}</SettingsContext>;
 }

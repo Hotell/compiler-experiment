@@ -1,5 +1,8 @@
 export type Status = "Open" | "Investigating" | "Resolved";
 export type Queue = "All incidents" | "Platform" | "Payments" | "Identity";
+export type UserSettings = { displayName: string; density: "comfortable" | "compact" };
+export type Notification = { incidentId: string; read: boolean };
+export const initialSettings: UserSettings = { displayName: "Alex Chen", density: "comfortable" };
 export type Incident = {
   id: string;
   title: string;
@@ -42,18 +45,25 @@ export const initialIncidents: Incident[] = Array.from({ length: 200 }, (_, inde
   };
 });
 
+export const initialNotifications: Notification[] = initialIncidents
+  .filter((incident) => incident.severity === "Critical" && incident.status !== "Resolved")
+  .slice(0, 3)
+  .map((incident) => ({ incidentId: incident.id, read: false }));
+
 export function visibleIncidents(
   incidents: Incident[],
   queue: Queue,
   search: string,
   status: string,
   sort: string,
+  favoritesOnly = false,
 ) {
   const query = search.trim().toLowerCase();
   const filtered = incidents.filter(
     (incident) =>
       (queue === "All incidents" || incident.queue === queue) &&
       (status === "All statuses" || incident.status === status) &&
+      (!favoritesOnly || incident.favorite) &&
       (!query ||
         `${incident.id} ${incident.title} ${incident.service}`.toLowerCase().includes(query)),
   );

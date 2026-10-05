@@ -5,7 +5,7 @@ const reuseCompilerPreview =
 
 export default defineConfig({
   testDir: "./benchmark",
-  testMatch: ["measure.spec.ts", "lighthouse.spec.ts", "load-memory.spec.ts"],
+  testMatch: ["measure.spec.ts", "lighthouse.spec.ts", "load-memory.spec.ts", "workspace.spec.ts"],
   workers: 1,
   retries: 0,
   reporter: "list",
