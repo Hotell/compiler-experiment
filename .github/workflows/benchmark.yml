@@ -17,6 +17,8 @@ jobs:
       - run: yarn install --immutable
       - run: yarn playwright install --with-deps chromium
       - run: yarn benchmark:all
+      - name: Verify publishable Pages site
+        run: yarn check:pages
       - name: Publish comparison summary
         if: always()
         run: |
@@ -56,4 +58,5 @@ jobs:
             playwright-report/
             benchmark/results/*.cpuprofile
             benchmark/results/lighthouse-*.json
+            benchmark/results/pages-failure-*
           if-no-files-found: ignore

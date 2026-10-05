@@ -47,9 +47,14 @@ jobs:
           echo "BENCHMARK_RUN_ID=$BENCHMARK_RUN_ID" >> "$GITHUB_ENV"
           echo "BENCHMARK_SHA=$BENCHMARK_SHA" >> "$GITHUB_ENV"
       - run: yarn fmt:check && yarn lint && yarn typecheck
-      - run: yarn build:pages
       - run: yarn playwright install --with-deps chromium
-      - run: node scripts/check-pages.mjs
+      - run: yarn check:pages
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: pages-diagnostics
+          path: benchmark/results/pages-failure-*
+          if-no-files-found: ignore
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:

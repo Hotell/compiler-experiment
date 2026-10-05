@@ -18,6 +18,23 @@ yarn preview:pages  # http://127.0.0.1:4180/compiler-experiment/
 
 Keep the preview command running while browsing. The local report is labeled as a preview; CI deployments link to the successful benchmark run. `node scripts/check-pages.mjs` tests the same assembled site without leaving a server running. `dist-pages` and benchmark results are generated and ignored.
 
+### Before pushing and recovering deployments
+
+The default pre-push hook runs lint and application type checks, not browser or deployment checks. For a complete local check before pushing, run:
+
+```sh
+yarn verify:push   # Fresh benchmarks + ablation, then assemble and exercise all Pages routes
+git push
+```
+
+This takes several minutes. For site/check-only edits with matching benchmark provenance, use `yarn check:pages` instead; it rebuilds the deployed layout and runs the desktop/mobile and DevTools checks. Changed application sources, dependencies or benchmark inputs require `yarn verify:push` to regenerate measurements. Neither command uploads or deploys anything.
+
+The `Benchmark` workflow now checks the publishable Pages site on **every push and pull request**, after measurement. Require its `compare` job in the default branch's ruleset to catch failures before merging; local hooks can be bypassed and macOS-only results do not guarantee Linux compatibility. The `Pages` workflow repeats the same `yarn check:pages` check on its fresh runner before publishing.
+
+After pushing, use `gh run list --commit "$(git rev-parse HEAD)" --limit 5` to find the Benchmark and subsequent Pages runs. Watch each with `gh run watch <run-id> --exit-status`; a green Benchmark alone does not confirm the subsequent deployment completed. If Pages fails, inspect `gh run view <pages-run-id> --log-failed`. Navigation failures save `pages-failure-*.png` and Playwright traces in `benchmark/results/`; CI uploads them as `playwright-diagnostics` (Benchmark) or `pages-diagnostics` (Pages). Download with `gh run download <run-id> --name <artifact-name>`, then open a trace with `yarn playwright show-trace <trace.zip>`.
+
+A deterministic source/test failure needs a fix and a new commit/push; rerunning the old workflow still checks out the old code. Only rerun failed jobs (`gh run rerun <run-id> --failed`) for a transient failure on otherwise valid code. The previous successful deployment remains live until the replacement passes.
+
 ### Production profiling apps
 
 Each chooser card has an **Open with Profiler** link, and the report links to all three production-profiling copies:

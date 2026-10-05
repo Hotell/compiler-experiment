@@ -80,6 +80,7 @@ if (preview) {
         .filter(({ size }) => size < 16),
     );
   const browser = await chromium.launch();
+  let viewportName;
   try {
     const base = `http://127.0.0.1:${server.address().port}${prefix}`;
     mkdirSync("benchmark/results", { recursive: true });
@@ -87,7 +88,9 @@ if (preview) {
       ["desktop", 1440, 900],
       ["mobile", 390, 844],
     ]) {
+      viewportName = name;
       const page = await browser.newPage({ viewport: { width, height } });
+      await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
       const errors = [];
       page.on("pageerror", (error) => errors.push(error.message));
       const externalRequests = [];
@@ -287,16 +290,34 @@ if (preview) {
           (await page.evaluate(() => window.__scanRenderCount)) > 0,
           `${app}: Scan must observe real app renders, not only display a toolbar`,
         );
+        const heading = page.locator("#root h1");
+        await heading.scrollIntoViewIfNeeded();
+        const bounds = await heading.boundingBox();
+        assert.ok(bounds, `${name} ${app}: missing inspection target`);
+        const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
         await toolbar.getByTitle("Inspect element", { exact: true }).click();
         await page.waitForFunction(
           () =>
             window.__REACT_SCAN__.ReactScanInternals.Store.inspectState.value.kind === "inspecting",
         );
-        await page.locator("#root h1").click();
-        await page.waitForFunction(
-          () =>
-            window.__REACT_SCAN__.ReactScanInternals.Store.inspectState.value.kind === "focused",
-        );
+        await page.mouse.move(point.x, point.y, { steps: 8 });
+        await page.waitForFunction(() => {
+          const state = window.__REACT_SCAN__.ReactScanInternals.Store.inspectState.value;
+          return (
+            state.kind === "inspecting" &&
+            state.hoveredDomElement?.contains(document.querySelector("#root h1"))
+          );
+        });
+        // Scan deliberately receives this pointer click instead of the underlying heading.
+        await page.mouse.click(point.x, point.y);
+        await page.waitForFunction(() => {
+          const state = window.__REACT_SCAN__.ReactScanInternals.Store.inspectState.value;
+          return (
+            state.kind === "focused" &&
+            document.querySelector("#root").contains(state.focusedDomElement) &&
+            state.focusedDomElement.contains(document.querySelector("#root h1"))
+          );
+        });
         await toolbar.getByTitle("Inspect element", { exact: true }).click();
         await toolbar.getByTitle("Inspect element", { exact: true }).click();
         await page.waitForFunction(
@@ -620,12 +641,30 @@ if (preview) {
       assert.deepEqual(errors, [], `${name} browser errors`);
       assert.deepEqual(externalRequests, [], `${name} profiling must not contact third parties`);
       assert.deepEqual(failedResources, [], `${name} resource failures`);
+      await page.context().tracing.stop();
       await page.close();
     }
     await checkDevtools(browser, base);
     console.log(
       "Pages chooser, source comparison, analyzer and benchmark reports, and all six app routes passed desktop/mobile navigation checks.",
     );
+  } catch (error) {
+    const captures = await Promise.allSettled(
+      browser.contexts().flatMap((context, index) => [
+        ...context.pages().map((page, pageIndex) =>
+          page.screenshot({
+            path: `benchmark/results/pages-failure-${viewportName}-${index}-${pageIndex}.png`,
+          }),
+        ),
+        context.tracing.stop({
+          path: `benchmark/results/pages-failure-${viewportName}-${index}.zip`,
+        }),
+      ]),
+    );
+    for (const capture of captures)
+      if (capture.status === "rejected")
+        console.error("Pages diagnostic capture failed:", capture.reason);
+    throw error;
   } finally {
     await browser.close();
     await new Promise((done) => server.close(done));
