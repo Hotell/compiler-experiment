@@ -17,6 +17,8 @@ node_modules
 .pnp.*
 apps/*/dist/
 apps/*/dist-profile/
+apps/*/dist-profile-tracks/
+apps/*/dist-profile-granular/
 apps/*/dist-profile-pages/
 apps/manual/dist-ablation/
 benchmark/results/

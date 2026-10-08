@@ -122,9 +122,19 @@ if (import.meta.env.MODE === "profile") {
   window.__benchmark = createRecorder();
 }
 
+const onTracksRender: ProfilerOnRenderCallback = () => {};
+
+export function TracksProfiled({ children }: { children: ReactElement }) {
+  return (
+    <Profiler id="root" onRender={onTracksRender}>
+      {children}
+    </Profiler>
+  );
+}
+
 export function Profiled({ id, children }: { id: string; children: ReactElement }) {
-  return import.meta.env.MODE === "profile" ? (
-    <Profiler id={id} onRender={onRender}>
+  return import.meta.env.MODE === "profile" || import.meta.env.MODE === "profile-granular" ? (
+    <Profiler id={id} onRender={import.meta.env.MODE === "profile" ? onRender : onTracksRender}>
       {children}
     </Profiler>
   ) : (

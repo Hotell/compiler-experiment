@@ -1,0 +1,47 @@
+name: Profiler Overhead
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profiler-overhead-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline-placement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn playwright install --with-deps chromium
+      - name: Verify experiment
+        run: yarn fmt:check && yarn lint && yarn workspace @experiment/baseline typecheck
+      - name: Measure Baseline production, root and granular Profilers
+        run: yarn benchmark:profiler
+      - name: Capture Performance Tracks separately
+        run: yarn benchmark:profiler:tracks
+      - name: Publish measured summary
+        if: always()
+        run: |
+          echo 'Baseline only: production vs one root Profiler vs existing granular placement, using identical no-op callbacks. CPU, heap/RSS, load timing and traces are separate passes. Hosted-runner measurements still contain noise; negative timing deltas are not proof of an improvement.' >> "$GITHUB_STEP_SUMMARY"
+          if [[ -s benchmark/results/profiler-overhead/comparison.md ]]; then
+            cat benchmark/results/profiler-overhead/comparison.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Profiler measurement report unavailable; inspect the failed step and diagnostic artifact.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: baseline-profiler-overhead
+          path: benchmark/results/profiler-overhead/
+          if-no-files-found: warn
