@@ -59,6 +59,14 @@ Pages checks verify links and assets, desktop/mobile interaction, Scan's toolbar
 
 ## Run locally
 
+### Baseline Profiler CI experiment
+
+The **Profiler Overhead** workflow runs on pull requests in an isolated Ubuntu job. It compares only Baseline (no React Compiler or manual memoization): normal production, one root Profiler, and the existing granular boundary placement. Both profiling arms use identical stable no-op callbacks, without Scan, the validating recorder or a DevTools hook.
+
+The job measures initial raw/gzip assets, load readiness at 1x/4x CPU, all-thread renderer CPU consumption at 1x, sampled JS/embedder heap, retained heap and renderer RSS. Six repetitions cover every three-arm order; CPU, latency, memory and trace capture are separate passes. The report and authenticated raw data are in the **baseline-profiler-overhead** artifact and workflow summary. Hosted runners reduce workstation-specific interference but do not guarantee unbiased or noise-free timings. No noisy speed threshold is a CI gate, and a negative wall-clock delta is not proof of a speedup.
+
+Run `yarn benchmark:profiler`, then `yarn benchmark:profiler:tracks` in an isolated worktree to reproduce the experiment. Use a fresh `BENCHMARK_RESULTS_DIR` for each independent session. Historical local findings and metric caveats are stored in [profiler-overhead-summary.md](profiler-overhead-summary.md); CI collects fresh data instead of publishing those local numbers. Existing memoization benchmarks and Pages publishing are unchanged by this standalone job.
+
 Requires Node >=22.12 and Corepack. From the repository root:
 
 ```sh
