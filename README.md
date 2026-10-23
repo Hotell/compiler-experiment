@@ -59,7 +59,7 @@ Pages checks verify links and assets, desktop/mobile interaction, Scan's toolbar
 
 ## Run locally
 
-Requires Node >=22.12 and Corepack. From the repository root:
+Requires Node 22.x (>=22.14.0) or 24.x and Corepack. From the repository root:
 
 ```sh
 corepack enable
