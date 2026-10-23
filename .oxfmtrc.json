@@ -6,6 +6,7 @@
     "apps/*/dist/**",
     "apps/*/dist-profile/**",
     "benchmark/results/**",
+    "compiler-repros/results/**",
     "test-results/**",
     "playwright-report/**"
   ]

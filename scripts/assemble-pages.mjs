@@ -9,6 +9,7 @@ import { build } from "vite";
 import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
 import { ablationFiles, loadAblationEvidence } from "./report-evidence.mjs";
 import { reportSections } from "./report-markdown.mjs";
+import { publishComparison } from "../compiler-repros/publish.mjs";
 
 const output = "dist-pages";
 const appLabels = {
@@ -52,6 +53,7 @@ for (const app of ["compiler", "manual", "baseline"]) {
 
 mkdirSync(output, { recursive: true });
 cpSync("site", output, { recursive: true, force: true });
+publishComparison(resolve(output, "compiler-repros"));
 await build({
   configFile: false,
   publicDir: false,
@@ -310,4 +312,6 @@ writeFileSync(
 </html>`,
 );
 writeFileSync(`${output}/.nojekyll`, "");
-console.log(`Assembled ${output}/ with chooser, source comparison, report and six app routes.`);
+console.log(
+  `Assembled ${output}/ with chooser, source comparison, compiler repros, report and six app routes.`,
+);

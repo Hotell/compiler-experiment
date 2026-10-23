@@ -1,0 +1,7 @@
+{
+  "$schema": "../node_modules/@fluentui/react-compiler-analyzer/rca.config.schema.json",
+  "mode": "infer",
+  "format": "json",
+  "strictPaths": true,
+  "exclude": []
+}

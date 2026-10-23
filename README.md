@@ -72,6 +72,10 @@ yarn workspace @experiment/baseline dev # http://127.0.0.1:5175
 
 Start each app in its own terminal. Use `yarn fmt` to format authored files and `yarn fmt:check` for the non-writing format gate. `yarn benchmark` runs the format check, Oxlint, immutability and manual-memo policy guards, recorder/collector fixtures, TypeScript, normal builds, compiler-output assertion, profile builds, Chromium parity/profiler tests, normal-build 4x CPU tests, separate load-memory sampling, three mobile Lighthouse audits per app, and report validation. Reports are written to ignored `benchmark/results/comparison.json` and `benchmark/results/comparison.md`, with raw schema-versioned measurements, linked SVG flame charts, raw CPU profiles, load-memory samples, and Lighthouse audits in the same directory. `yarn benchmark:trace` additionally captures an unthrottled `.cpuprofile` for the favorite interaction in each app's first _React profiling_ run. Open CPU profiles in Chrome DevTools Performance or JavaScript Profiler; CDP samples are separate diagnostics, not React update counts.
 
+## Isolated compiler repros
+
+Run `yarn repro:compilers` to compare Babel React Compiler, `oxc-transform-react`, and SWC's native React Compiler, with the installed React Compiler Analyzer as a Babel-analysis cross-check. Open the generated `compiler-repros/results/index.html` for the interactive report, including all three compiler pairs. Pages publishes it at [Compiler compatibility](https://hotell.github.io/compiler-experiment/compiler-repros/) after the next successful deployment of these changes, with a link from the chooser. `yarn check:compiler-repros` validates the report and its Pages route independently of the app benchmarks. The [repro guide](compiler-repros/README.md) covers public evidence, verification commands, and the native SWC/Rspack integration.
+
 ## Isolated row-memo ablation
 
 To measure the contribution of **only** the manual app's outer `memo(IncidentRow)` boundary:

@@ -46,11 +46,58 @@ const server = createServer((request, response) => {
 });
 
 const preview = process.argv.includes("--serve");
+const reprosOnly = process.argv.includes("--compiler-repros-only");
+
+async function checkCompilerRepros(page, base, name, fromChooser = true) {
+  if (fromChooser) {
+    await page.goto(base);
+    await page.getByRole("link", { name: "Compiler repros", exact: true }).click();
+  } else {
+    await page.goto(new URL("compiler-repros/", base).href);
+  }
+  assert.equal(new URL(page.url()).pathname, `${prefix}compiler-repros/`);
+  await page.getByRole("heading", { name: "Compiler compatibility", exact: true }).waitFor();
+  const response = await page.request.get(new URL("compiler-repros/comparison.json", base).href);
+  assert.equal(response.status(), 200);
+  const report = await response.json();
+  assert.deepEqual(report.failures, []);
+  assert.equal(await page.locator("[data-case]").count(), report.cases.length);
+  assert.equal(await page.getByRole("columnheader", { name: "SWC cache", exact: true }).count(), 1);
+  assert.doesNotMatch(JSON.stringify(report), /\/Users\/|\/home\/runner\//);
+  await page.getByRole("searchbox", { name: "Search fixtures" }).fill("no-such-fixture");
+  assert.equal(await page.locator("#empty-row").isVisible(), true);
+  await page.getByRole("searchbox", { name: "Search fixtures" }).fill("");
+  await page.getByRole("tab", { name: "Input", exact: true }).click();
+  assert.ok((await page.locator("#input-code").textContent()).length);
+  const rawSource = await page.request.get(
+    new URL(
+      await page.getByRole("link", { name: "Source", exact: true }).getAttribute("href"),
+      page.url(),
+    ).href,
+  );
+  assert.equal(rawSource.status(), 200);
+  await page.getByRole("tab", { name: "Compiler output", exact: true }).click();
+  await page.getByRole("combobox", { name: "Compare compilers" }).selectOption("babel-swc");
+  const selected = report.cases.find((fixture) => fixture.id === new URL(page.url()).hash.slice(1));
+  assert.equal(await page.locator("#right-code").textContent(), selected.swc.code);
+  const rawSwc = await page.request.get(new URL(`${selected.id}.swc.jsx`, page.url()).href);
+  assert.equal(rawSwc.status(), 200);
+  assert.equal(await rawSwc.text(), selected.swc.code);
+  assert.ok(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    `${name} compiler report overflows`,
+  );
+  await page.screenshot({
+    path: `benchmark/results/compiler-repros-${name}.png`,
+    fullPage: true,
+  });
+}
+
 await new Promise((done) => server.listen(preview ? 4180 : 0, "127.0.0.1", done));
 if (preview) {
   console.log(`Pages preview: http://127.0.0.1:${server.address().port}${prefix}`);
 } else {
-  for (const app of ["compiler", "manual", "baseline"]) {
+  for (const app of reprosOnly ? [] : ["compiler", "manual", "baseline"]) {
     for (const mode of ["dist", "dist-profile-pages"]) {
       const directory = `apps/${app}/${mode}`;
       for (const file of readdirSync(directory, { recursive: true })) {
@@ -108,6 +155,15 @@ if (preview) {
         if (response.status() >= 400)
           failedResources.push(`${response.status()} ${response.url()}`);
       });
+      if (reprosOnly) {
+        await checkCompilerRepros(page, base, name, false);
+        assert.deepEqual(errors, [], `${name} compiler report browser errors`);
+        assert.deepEqual(externalRequests, [], `${name} compiler report external requests`);
+        assert.deepEqual(failedResources, [], `${name} compiler report resource failures`);
+        await page.context().tracing.stop();
+        await page.close();
+        continue;
+      }
       for (const app of ["compiler", "manual", "baseline"]) {
         const home = await page.goto(base);
         assert.equal(home.status(), 200);
@@ -380,6 +436,8 @@ if (preview) {
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
         `${name} expanded profiling help overflows`,
       );
+      await page.goto(base);
+      await checkCompilerRepros(page, base, name);
       await page.goto(base);
       await page.getByRole("link", { name: "Analyzer report" }).click();
       assert.equal(new URL(page.url()).pathname, `${prefix}analyzer/`);
@@ -668,9 +726,11 @@ if (preview) {
       await page.context().tracing.stop();
       await page.close();
     }
-    await checkDevtools(browser, base);
+    if (!reprosOnly) await checkDevtools(browser, base);
     console.log(
-      "Pages chooser, source comparison, analyzer and benchmark reports, and all six app routes passed desktop/mobile navigation checks.",
+      reprosOnly
+        ? "Compiler repro Pages route passed desktop/mobile navigation checks."
+        : "Pages chooser, compiler repros, source comparison, analyzer and benchmark reports, and all six app routes passed desktop/mobile navigation checks.",
     );
   } catch (error) {
     const captures = await Promise.allSettled(
