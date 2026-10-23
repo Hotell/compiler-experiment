@@ -553,7 +553,8 @@ if (preview) {
       await page.waitForURL(new URL("sources/manual-baseline-providers.html", base).href);
       assert.equal((await page.locator(".diff-header span").allTextContents())[2], "providers.js");
       await page.goto(base);
-      await page.getByRole("link", { name: "Latest benchmark report" }).click();
+      assert.equal(await page.locator(".report-entry-label").first().textContent(), "Benchmarks");
+      await page.getByRole("link", { name: "Benchmarks", exact: true }).click();
       assert.equal(new URL(page.url()).pathname, `${prefix}report/`);
       assert.equal(
         await page
