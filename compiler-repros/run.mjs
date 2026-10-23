@@ -219,7 +219,7 @@ export function compileOxc(source, filename) {
     lang: "tsx",
     sourceType: "module",
     jsx: "preserve",
-    reactCompiler: { ...compilerOptions },
+    reactCompiler: { ...compilerOptions, reportDiagnostics: true },
   };
   try {
     const result = oxcTransform(filename, source, options);

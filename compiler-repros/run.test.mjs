@@ -6,6 +6,10 @@ import { test } from "node:test";
 import { suppressionFinding, suppressionOptOut } from "./findings.mjs";
 import { publicEvidence, renderHtml, writePublicArtifacts } from "./html.mjs";
 import {
+  compareReports,
+  comparisonPackages,
+} from "../.agents/skills/compiler-upgrade-report/scripts/compare-reports.mjs";
+import {
   cases,
   compileBabel,
   compileOxc,
@@ -107,6 +111,16 @@ test("Babel analysis-only mode records events without attributing emitted code",
   const result = compileBabel(readFileSync(filename, "utf8"), filename, { noEmit: true });
   assert.ok(result.events.some((event) => event.kind === "CompileSuccess"));
   assert.equal(summarize(result, "Example").cacheEmitted, false);
+});
+
+test("OXC explicitly requests recoverable compiler diagnostics", () => {
+  const filename = fixturePath("valid-hooks-redundant-suppression");
+  const result = compileOxc(readFileSync(filename, "utf8"), filename);
+  assert.equal(result.options.reactCompiler.reportDiagnostics, true);
+  assert.equal(result.fatal, false);
+  assert.equal(summarize(result, "Example").cacheEmitted, false);
+  assert.equal(summarize(result, "Example").reason, "suppression-opt-out");
+  assert.ok(result.diagnostics.length > 0);
 });
 
 test("SWC preserves unavailable success telemetry and captures fatal parse errors", () => {
@@ -253,6 +267,109 @@ test("public evidence removes workspace and executable paths recursively", () =>
   assert.equal(JSON.stringify(evidence).includes(process.execPath), false);
 });
 
+test("upgrade workflow includes every comparison compiler and analyzer by default", () => {
+  assert.deepEqual(
+    [...comparisonPackages].sort(),
+    [
+      "@babel/core",
+      "babel-plugin-react-compiler",
+      "oxc-transform-react",
+      "@swc/core",
+      "@fluentui/react-compiler-analyzer",
+      "oxfmt",
+    ].sort(),
+  );
+  assert.equal(new Set(comparisonPackages).size, comparisonPackages.length);
+});
+
+test("upgrade comparison separates outcome, diagnostic, option, and codegen changes", () => {
+  const observation = () => ({
+    fatal: false,
+    options: {},
+    code: "original",
+    diagnostics: [],
+    exception: null,
+  });
+  const summary = () => ({
+    reportedStatus: "compiled",
+    reason: null,
+    cacheEmitted: true,
+    slots: [2],
+  });
+  const before = {
+    schemaVersion: 1,
+    failures: [],
+    provenance: { packages: { "oxc-transform-react": { version: "0.145.0" } } },
+    analyzer: {
+      cwd: "/previous/workspace",
+      document: { summary: {}, functions: [], unparseable: [] },
+    },
+    cases: [
+      {
+        id: "example",
+        target: "Example",
+        sourceHash: "a".repeat(64),
+        summary: { babel: summary(), oxc: summary(), swc: summary() },
+        babel: observation(),
+        oxc: observation(),
+        swc: observation(),
+      },
+    ],
+  };
+  const after = structuredClone(before);
+  assert.deepEqual(compareReports(before, after).summary, {
+    fixturesCompared: 1,
+    outcomesChanged: 0,
+    diagnosticsChanged: 0,
+    diagnosticContentChanged: 0,
+    codegenChanged: 0,
+    optionsChanged: 0,
+    analyzerChanged: false,
+  });
+  before.cases[0].oxc.diagnostics = [
+    { severity: "Warning", message: "Skipped", codeframe: "/previous/workspace/case.tsx" },
+  ];
+  after.analyzer.cwd = "/next/workspace";
+  after.cases[0].oxc.diagnostics = [
+    { severity: "Warning", message: "Skipped", codeframe: "/next/workspace/case.tsx" },
+  ];
+  assert.equal(compareReports(before, after).changes.length, 0);
+  after.provenance.packages["oxc-transform-react"].version = "0.155.0";
+  after.cases[0].oxc.diagnostics[0].severity = "Error";
+  after.cases[0].oxc.options.reportDiagnostics = true;
+  let delta = compareReports(before, after);
+  assert.equal(delta.comparable, true);
+  assert.equal(delta.summary.outcomesChanged, 0);
+  assert.equal(delta.summary.diagnosticsChanged, 1);
+  assert.equal(delta.summary.diagnosticContentChanged, 1);
+  assert.equal(delta.summary.optionsChanged, 1);
+  assert.equal(delta.summary.codegenChanged, 0);
+  assert.deepEqual(delta.versions, [
+    { package: "oxc-transform-react", before: "0.145.0", after: "0.155.0" },
+  ]);
+  after.cases[0].oxc.diagnostics[0].severity = "Warning";
+  after.cases[0].oxc.diagnostics[0].codeframe += " rendered differently";
+  delta = compareReports(before, after);
+  assert.equal(delta.summary.diagnosticsChanged, 1);
+  assert.equal(delta.summary.diagnosticContentChanged, 0);
+  after.cases[0].summary.oxc.cacheEmitted = false;
+  after.cases[0].oxc.code = "changed output";
+  assert.equal(compareReports(before, after).summary.outcomesChanged, 1);
+  assert.equal(compareReports(before, after).summary.codegenChanged, 1);
+  after.cases[0].sourceHash = "b".repeat(64);
+  assert.equal(compareReports(before, after).comparable, false);
+  assert.deepEqual(compareReports(before, after).inputs.changed, ["example"]);
+  after.cases = [];
+  assert.deepEqual(compareReports(before, after).inputs.removed, ["example"]);
+  assert.throws(() => compareReports({}, after), /report/i);
+  const duplicate = structuredClone(before);
+  duplicate.cases.push(duplicate.cases[0]);
+  assert.throws(() => compareReports(duplicate, before), /duplicate/i);
+  const failed = structuredClone(before);
+  failed.failures.push("Guard failed");
+  assert.equal(compareReports(before, failed).comparable, false);
+});
+
 test("full comparison includes every fixture, raw artifacts, and analysis-only RCA triangulation", (context) => {
   const outputDirectory = mkdtempSync(join(tmpdir(), "compiler-repros-"));
   context.after(() => rmSync(outputDirectory, { recursive: true, force: true }));
@@ -260,7 +377,12 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
   assert.deepEqual(report.failures, []);
   assert.equal(report.cases.length, cases.length);
   assert.equal(report.analyzer.document.summary.unparseableFiles, 0);
-  assert.equal(report.provenance.packages["@swc/core"].version, "1.16.20");
+  const pins = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ).devDependencies;
+  for (const name of comparisonPackages.filter((entry) => entry !== "oxfmt")) {
+    assert.equal(report.provenance.packages[name].version, pins[name], name);
+  }
   for (const fixture of report.cases) {
     assert.match(fixture.sourceHash, /^[a-f0-9]{64}$/);
     assert.equal(fixture.babelVsAnalyzer.disagreement, false, fixture.id);
@@ -357,7 +479,7 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
   const html = readFileSync(join(outputDirectory, "index.html"), "utf8");
   assert.ok(html.includes("Compiler compatibility"));
   assert.ok(html.includes('<th scope="col">SWC cache</th>'));
-  assert.ok(html.includes("<strong>SWC</strong> 1.16.20"));
+  assert.ok(html.includes(`<strong>SWC</strong> ${pins["@swc/core"]}`));
   assert.equal(html.includes(process.cwd()), false);
   for (const fixture of report.cases) {
     assert.ok(html.includes(`data-case="${fixture.id}"`));
