@@ -10,6 +10,7 @@ import { hashFiles, validateProvenance } from "./benchmark-provenance.mjs";
 import { ablationFiles, loadAblationEvidence } from "./report-evidence.mjs";
 import { reportSections } from "./report-markdown.mjs";
 import { publishComparison } from "../compiler-repros/publish.mjs";
+import { publishActivity } from "../compiler-activity/report.mjs";
 
 const output = "dist-pages";
 const appLabels = {
@@ -54,6 +55,7 @@ for (const app of ["compiler", "manual", "baseline"]) {
 mkdirSync(output, { recursive: true });
 cpSync("site", output, { recursive: true, force: true });
 publishComparison(resolve(output, "compiler-repros"));
+publishActivity(resolve(output, "compiler-activity"));
 await build({
   configFile: false,
   publicDir: false,

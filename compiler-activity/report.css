@@ -1,0 +1,221 @@
+.activity-main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 36px 32px 20px;
+  line-height: 1.6;
+}
+.activity-heading,
+.activity-heading nav,
+.jump-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px 24px;
+  flex-wrap: wrap;
+}
+.activity-heading h1 {
+  font-size: 34px;
+}
+.as-of {
+  margin: 0;
+  color: var(--muted);
+}
+.as-of time {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.jump-links {
+  justify-content: flex-start;
+  padding: 24px 0;
+}
+.jump-links a,
+.activity-main section a {
+  color: var(--green);
+  text-underline-offset: 3px;
+}
+.activity-main section {
+  padding: 28px 0;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 20px;
+}
+.activity-main .activity-heading {
+  border: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.activity-main h2 {
+  font-size: 22px;
+  margin-bottom: 16px;
+}
+.activity-main h3 {
+  font-size: 18px;
+  margin: 16px 0;
+}
+.activity-main p {
+  max-width: 1050px;
+}
+.activity-main :is(.cell-detail, .scope-note, .window-key, .finding-sources, footer) {
+  font-size: 16px;
+}
+.activity-main .cell-detail {
+  display: block;
+  color: var(--muted);
+}
+.scope-note {
+  border-left: 3px solid var(--line);
+  padding-left: 16px;
+  color: var(--muted);
+}
+.activity-main .window-key {
+  font-weight: 700;
+  color: var(--green);
+}
+.activity-main .table-scroll {
+  border-radius: 0;
+  max-width: 100%;
+}
+.activity-main table {
+  min-width: 760px;
+  width: 100%;
+  font-size: 16px;
+}
+.activity-main :is(td, th) {
+  padding: 14px 16px;
+  vertical-align: top;
+  font-size: 16px;
+}
+.activity-main th {
+  text-align: left;
+}
+.activity-main td {
+  font-variant-numeric: tabular-nums;
+}
+.activity-main td:not(:first-child) {
+  white-space: normal;
+}
+.activity-main th[scope="col"] {
+  color: var(--muted);
+  font-weight: 600;
+  background: #eef3f1;
+}
+.activity-main .finding-sources {
+  display: block;
+  margin-top: 6px;
+}
+.activity-main details {
+  margin: 12px 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.activity-main summary {
+  cursor: pointer;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.activity-main summary .muted {
+  font-weight: 400;
+  margin-left: 12px;
+}
+.activity-main pre {
+  overflow: auto;
+  max-height: 500px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 16px;
+}
+.activity-main code {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.release-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.stable-key::before,
+.prerelease-key::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  background: var(--green);
+}
+.prerelease-key::before {
+  background: #bb781c;
+}
+.release-bars {
+  display: flex;
+  width: 240px;
+  height: 16px;
+  margin-top: 6px;
+}
+.stable-bar {
+  background: var(--green);
+}
+.prerelease-bar {
+  background: #bb781c;
+}
+.activity-main .month-table {
+  min-width: 620px;
+}
+.evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+}
+.record-list {
+  padding-left: 20px;
+  margin: 0;
+}
+.record-list li {
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.source-list {
+  padding-left: 20px;
+  columns: 2;
+}
+.source-list li {
+  margin-bottom: 12px;
+  break-inside: avoid;
+}
+.activity-main footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 700px) {
+  .site-header {
+    padding: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .site-header .brand-context {
+    display: none;
+  }
+  .activity-main {
+    padding: 24px 16px;
+  }
+  .activity-heading h1 {
+    font-size: 30px;
+  }
+  .activity-main h2 {
+    font-size: 21px;
+  }
+  .evidence-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .source-list {
+    columns: 1;
+  }
+  .activity-heading nav {
+    gap: 8px 20px;
+  }
+}

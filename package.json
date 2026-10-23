@@ -8,10 +8,10 @@
     "postinstall": "husky",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
-    "lint": "oxlint apps shared benchmark scripts --ignore-pattern 'benchmark/fixtures/**'",
+    "lint": "oxlint apps shared benchmark scripts compiler-activity --ignore-pattern 'benchmark/fixtures/**'",
     "typecheck": "yarn workspace @experiment/compiler typecheck && yarn workspace @experiment/manual typecheck && yarn workspace @experiment/baseline typecheck",
     "build": "yarn workspace @experiment/compiler build && yarn workspace @experiment/manual build && yarn workspace @experiment/baseline build",
-    "build:pages": "PAGES_BASE=/compiler-experiment/compiler/ yarn workspace @experiment/compiler build && PAGES_BASE=/compiler-experiment/manual/ yarn workspace @experiment/manual build && PAGES_BASE=/compiler-experiment/baseline/ yarn workspace @experiment/baseline build && yarn build:pages:profile && yarn test:compiler-repros && node scripts/assemble-pages.mjs",
+    "build:pages": "PAGES_BASE=/compiler-experiment/compiler/ yarn workspace @experiment/compiler build && PAGES_BASE=/compiler-experiment/manual/ yarn workspace @experiment/manual build && PAGES_BASE=/compiler-experiment/baseline/ yarn workspace @experiment/baseline build && yarn build:pages:profile && yarn test:compiler-repros && yarn test:compiler-activity && node scripts/assemble-pages.mjs",
     "build:pages:profile": "PAGES_BASE=/compiler-experiment/profile/compiler/ yarn workspace @experiment/compiler build:profile --outDir dist-profile-pages && PAGES_BASE=/compiler-experiment/profile/manual/ yarn workspace @experiment/manual build:profile --outDir dist-profile-pages && PAGES_BASE=/compiler-experiment/profile/baseline/ yarn workspace @experiment/baseline build:profile --outDir dist-profile-pages",
     "preview:pages": "node scripts/check-pages.mjs --serve",
     "check:pages": "yarn build:pages && node scripts/check-pages.mjs",
@@ -32,7 +32,11 @@
     "build:compiler-repros": "node compiler-repros/publish.mjs",
     "check:compiler-repros": "yarn lint:compiler-repros && yarn typecheck:compiler-repros && yarn test:compiler-repros && yarn test:compiler-repros:browser && yarn build:compiler-repros && node scripts/check-pages.mjs --compiler-repros-only",
     "typecheck:compiler-repros": "tsc --noEmit --target ES2022 --lib ES2022,DOM --module ESNext --moduleResolution Bundler --jsx react-jsx --strict --skipLibCheck compiler-repros/cases/*.tsx",
-    "lint:compiler-repros": "oxlint compiler-repros/*.mjs compiler-repros/report.js"
+    "lint:compiler-repros": "oxlint compiler-repros/*.mjs compiler-repros/report.js",
+    "research:compiler-activity": "node compiler-activity/collect.mjs",
+    "test:compiler-activity": "node --test compiler-activity/activity.test.mjs",
+    "build:compiler-activity": "node compiler-activity/report.mjs",
+    "check:compiler-activity": "oxlint compiler-activity && yarn test:compiler-activity && yarn build:compiler-activity && node scripts/check-pages.mjs --compiler-activity-only"
   },
   "devDependencies": {
     "@babel/core": "8.0.7",
@@ -58,6 +62,7 @@
     "react-devtools-inline": "8.0.0",
     "react-dom": "19.3.0",
     "react-scan": "0.5.3",
+    "semver": "^7.8.5",
     "typescript": "5.9.3",
     "vite": "8.3.0"
   },

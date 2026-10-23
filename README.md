@@ -76,6 +76,26 @@ Start each app in its own terminal. Use `yarn fmt` to format authored files and 
 
 Run `yarn repro:compilers` to compare Babel React Compiler, `oxc-transform-react`, and SWC's native React Compiler, with the installed React Compiler Analyzer as a Babel-analysis cross-check. Open the generated `compiler-repros/results/index.html` for the interactive report, including all three compiler pairs. Pages publishes it at [Compiler compatibility](https://hotell.github.io/compiler-experiment/compiler-repros/) after the next successful deployment of these changes, with a link from the chooser. `yarn check:compiler-repros` validates the report and its Pages route independently of the app benchmarks. The [repro guide](compiler-repros/README.md) covers public evidence, verification commands, and the native SWC/Rspack integration.
 
+## Compiler ecosystem activity
+
+The chooser also links to a separate [Compiler activity report](https://hotell.github.io/compiler-experiment/compiler-activity/), available after the next successful deployment of these changes. It compares compiler-path commits and merged PRs over 30 and 90 days, compiler issue triage, and 12 calendar months of npm/crates.io publications. Babel, upstream React Rust, OXC, and the SWC adapter are separate tracks; Rspack and Rsbuild are integration layers. Activity does not establish correctness, production readiness, or performance, and does not alter benchmark verdicts.
+
+The dated evidence lives in [compiler-activity/activity.snapshot.json](compiler-activity/activity.snapshot.json). Builds, tests, Pages, and the browser use only that saved snapshot. Refresh is explicit, never scheduled or performed during deployment:
+
+```sh
+yarn research:compiler-activity --gh-auth # Existing Hotell gh login, no account switch
+# Or set GH_TOKEN/GITHUB_TOKEN in your local environment, then:
+yarn research:compiler-activity
+yarn check:compiler-activity              # Offline report tests and desktop/mobile checks
+node compiler-activity/report.mjs --local # Standalone HTML + JSON + Markdown in ignored results/
+```
+
+Never paste credentials into chat or commit them. Refresh requests are read-only; GitHub credentials are sent only to api.github.com. The collector verifies full pagination and changed-file attribution, splits capped searches, retains stable/prerelease channels separately, and only replaces the snapshot after successful validation. A failure leaves previous evidence intact. Review the snapshot diff and representative source changes, issues, and package dates before committing a refresh. Publication is reproducible from a fixed snapshot; the visible as-of date is not a claim of live freshness.
+
+React's compiler label is a shared Babel/Rust issue queue, counted once. OXC uses its compiler area label; SWC issue counts are explicitly limited title/body text matches. Currently reopened issues are not counted as closed, and closed issues are not necessarily fixed. Commit and PR scopes overlap, bots are included, and manifest/changelog-only path commits are separated from source/test/doc changes. Package-wide release cadence is not compiler-specific release cadence. Pinned manifests document compiler lineage separately from package history.
+
+The report publishes HTML, JSON, and Markdown at `compiler-activity/` through the existing successful Benchmark -> Pages workflow, with no additional CI tokens or network refresh. `yarn check:pages` checks chooser navigation as well as the report. Package script/dependency changes affect benchmark provenance: run `yarn verify:push` before publishing these changes. No command above pushes or deploys automatically.
+
 ## Isolated row-memo ablation
 
 To measure the contribution of **only** the manual app's outer `memo(IncidentRow)` boundary:

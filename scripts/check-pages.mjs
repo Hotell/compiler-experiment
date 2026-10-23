@@ -7,6 +7,7 @@ import { checkDevtools } from "./check-devtools.mjs";
 import { analyzeLoadMemory } from "./load-memory.mjs";
 import { analyzeFiltering, analyzeUplt } from "./report-evidence.mjs";
 import { reportSections } from "./report-markdown.mjs";
+import { summarize, validateSnapshot } from "../compiler-activity/model.mjs";
 
 const root = resolve("dist-pages");
 const prefix = "/compiler-experiment/";
@@ -17,6 +18,7 @@ const types = {
   ".jpg": "image/jpeg",
   ".svg": "image/svg+xml",
   ".json": "application/json",
+  ".md": "text/markdown; charset=utf-8",
 };
 const server = createServer((request, response) => {
   const url = new URL(request.url, "http://localhost");
@@ -47,6 +49,65 @@ const server = createServer((request, response) => {
 
 const preview = process.argv.includes("--serve");
 const reprosOnly = process.argv.includes("--compiler-repros-only");
+const activityOnly = process.argv.includes("--compiler-activity-only");
+const isolatedReport = reprosOnly || activityOnly;
+
+async function checkCompilerActivity(page, base, name, fromChooser = true) {
+  if (fromChooser) {
+    await page.goto(base);
+    await page.getByRole("link", { name: "Compiler activity", exact: true }).click();
+  } else {
+    await page.goto(new URL("compiler-activity/", base).href);
+  }
+  assert.equal(new URL(page.url()).pathname, `${prefix}compiler-activity/`);
+  await page.getByRole("heading", { name: "Compiler activity", exact: true }).waitFor();
+  const response = await page.request.get(new URL("compiler-activity/activity.json", base).href);
+  assert.equal(response.status(), 200);
+  const snapshot = validateSnapshot(await response.json());
+  assert.equal(await page.locator("time").getAttribute("datetime"), snapshot.asOf);
+  for (const track of summarize(snapshot)) {
+    const row = page.locator(`[data-track="${track.id}"]`);
+    assert.equal(
+      await row.locator('[data-metric="source"]').textContent(),
+      `${track.counts.days30.sourceCommits} / ${track.counts.days90.sourceCommits}`,
+    );
+    assert.equal(
+      await row.locator('[data-metric="merged"]').textContent(),
+      `${track.counts.days30.merged} / ${track.counts.days90.merged}`,
+    );
+  }
+  assert.equal(await page.locator("[data-track]").count(), 4);
+  assert.equal(await page.locator("[data-issue-scope]").count(), 3);
+  assert.equal(await page.locator("script").count(), 0);
+  const markdown = await page.request.get(new URL("compiler-activity/activity.md", base).href);
+  assert.equal(markdown.status(), 200);
+  assert.ok((await markdown.text()).includes(snapshot.asOf));
+  for (const filename of ["activity.json", "activity.md"])
+    assert.equal(await page.locator(`a[download][href="${filename}"]`).count(), 1);
+  assert.doesNotMatch(JSON.stringify(snapshot), /\/Users\/|\/home\/runner\//);
+  assert.ok(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    `${name} activity report overflows`,
+  );
+  await page.screenshot({
+    path: `benchmark/results/compiler-activity-${name}.png`,
+    fullPage: true,
+  });
+  await page.locator(".release-history summary").first().click();
+  assert.ok((await page.locator(".release-history[open] .month-table tbody tr").count()) >= 12);
+  assert.ok(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    `${name} release history overflows`,
+  );
+  await page.screenshot({
+    path: `benchmark/results/compiler-activity-history-${name}.png`,
+    fullPage: true,
+  });
+  if (fromChooser) {
+    await page.getByRole("link", { name: "All comparisons", exact: true }).click();
+    assert.equal(page.url(), base);
+  }
+}
 
 async function checkCompilerRepros(page, base, name, fromChooser = true) {
   if (fromChooser) {
@@ -97,7 +158,7 @@ await new Promise((done) => server.listen(preview ? 4180 : 0, "127.0.0.1", done)
 if (preview) {
   console.log(`Pages preview: http://127.0.0.1:${server.address().port}${prefix}`);
 } else {
-  for (const app of reprosOnly ? [] : ["compiler", "manual", "baseline"]) {
+  for (const app of isolatedReport ? [] : ["compiler", "manual", "baseline"]) {
     for (const mode of ["dist", "dist-profile-pages"]) {
       const directory = `apps/${app}/${mode}`;
       for (const file of readdirSync(directory, { recursive: true })) {
@@ -155,8 +216,11 @@ if (preview) {
         if (response.status() >= 400)
           failedResources.push(`${response.status()} ${response.url()}`);
       });
-      if (reprosOnly) {
-        await checkCompilerRepros(page, base, name, false);
+      if (isolatedReport) {
+        if (activityOnly) {
+          await checkCompilerActivity(page, base, name, false);
+          assert.deepEqual(await undersizedText(page), [], `${name} activity text is below 16px`);
+        } else await checkCompilerRepros(page, base, name, false);
         assert.deepEqual(errors, [], `${name} compiler report browser errors`);
         assert.deepEqual(externalRequests, [], `${name} compiler report external requests`);
         assert.deepEqual(failedResources, [], `${name} compiler report resource failures`);
@@ -438,6 +502,7 @@ if (preview) {
       );
       await page.goto(base);
       await checkCompilerRepros(page, base, name);
+      await checkCompilerActivity(page, base, name);
       await page.goto(base);
       await page.getByRole("link", { name: "Analyzer report" }).click();
       assert.equal(new URL(page.url()).pathname, `${prefix}analyzer/`);
@@ -726,11 +791,13 @@ if (preview) {
       await page.context().tracing.stop();
       await page.close();
     }
-    if (!reprosOnly) await checkDevtools(browser, base);
+    if (!isolatedReport) await checkDevtools(browser, base);
     console.log(
-      reprosOnly
-        ? "Compiler repro Pages route passed desktop/mobile navigation checks."
-        : "Pages chooser, compiler repros, source comparison, analyzer and benchmark reports, and all six app routes passed desktop/mobile navigation checks.",
+      activityOnly
+        ? "Compiler activity Pages route passed desktop/mobile offline checks."
+        : reprosOnly
+          ? "Compiler repro Pages route passed desktop/mobile navigation checks."
+          : "Pages chooser, compiler activity, compiler repros, source comparison, analyzer and benchmark reports, and all six app routes passed desktop/mobile navigation checks.",
     );
   } catch (error) {
     const captures = await Promise.allSettled(

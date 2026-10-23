@@ -21,6 +21,9 @@ apps/*/dist-profile-pages/
 apps/manual/dist-ablation/
 benchmark/results/
 compiler-repros/results/
+compiler-activity/results/
+compiler-activity/.cache/
+compiler-activity/*.pending
 playwright-report/
 test-results/
 dist-pages/

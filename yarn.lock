@@ -2567,6 +2567,7 @@ __metadata:
     react-devtools-inline: "npm:8.0.0"
     react-dom: "npm:19.3.0"
     react-scan: "npm:0.5.3"
+    semver: "npm:^7.8.5"
     typescript: "npm:5.9.3"
     vite: "npm:8.3.0"
   languageName: unknown
@@ -4381,7 +4382,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"semver@npm:^7.3.5, semver@npm:^7.5.2, semver@npm:^7.7.4":
+"semver@npm:^7.3.5, semver@npm:^7.5.2, semver@npm:^7.7.4, semver@npm:^7.8.5":
   version: 7.8.5
   resolution: "semver@npm:7.8.5"
   bin:
