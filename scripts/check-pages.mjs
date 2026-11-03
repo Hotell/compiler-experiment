@@ -211,7 +211,10 @@ if (preview) {
         return route.continue();
       });
       const failedResources = [];
-      page.on("requestfailed", (request) => failedResources.push(request.url()));
+      page.on("requestfailed", (request) => {
+        const reason = request.failure()?.errorText ?? "Request failed";
+        failedResources.push(`${reason} ${request.url()}`);
+      });
       page.on("response", (response) => {
         if (response.status() >= 400)
           failedResources.push(`${response.status()} ${response.url()}`);
@@ -492,6 +495,7 @@ if (preview) {
         assert.equal(await page.evaluate(() => window.__benchmark), undefined);
         await page.goto(new URL(`profile/${app}/`, base).href);
         await page.getByRole("link", { name: "All implementations", exact: true }).click();
+        await page.waitForLoadState("load");
         assert.equal(page.url(), base);
       }
       await page.getByText("How to profile these apps", { exact: true }).click();
