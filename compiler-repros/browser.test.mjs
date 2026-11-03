@@ -102,14 +102,23 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
     assert.equal(
       await finding
         .getByRole("heading", {
-          name: "SWC avoids a redundant-suppression bailout",
+          name: "Babel and SWC avoid module-suppression bailouts",
           exact: true,
         })
         .count(),
       1,
     );
     assert.ok((await finding.textContent()).includes("not proven redundancy detection"));
+    assert.ok((await page.locator(".versions").textContent()).includes("Babel (experimental)"));
+    assert.ok(
+      (await page.locator("#analyzer-profile").textContent()).includes(
+        report.provenance.analyzerCompiler["babel-plugin-react-compiler"].version,
+      ),
+    );
     const evidenceIds = [
+      "module-suppression",
+      "module-suppression-control",
+      "module-suppression-no-opt-out",
       "valid-hooks-redundant-suppression",
       "invalid-hooks-with-suppression",
       "invalid-hooks-no-suppression",
@@ -125,7 +134,11 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
         .locator('[data-row="valid-hooks-redundant-suppression"]')
         .getByText("Suppression opt-out", { exact: true })
         .count(),
-      2,
+      ["babel", "oxc"].filter(
+        (compiler) =>
+          report.cases.find((fixture) => fixture.id === "valid-hooks-redundant-suppression")
+            .summary[compiler].reason === "suppression-opt-out",
+      ).length,
     );
     await page.screenshot({
       path: join(directory, "results", `report-${name}.png`),
@@ -160,26 +173,34 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
     assert.ok(await page.locator("#diff-code .diff-line").count());
     await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
     assert.ok((await page.locator("#left-diagnostics").textContent()).length);
-    const inspected = report.cases.find((fixture) => fixture.id === "computed-template-key");
-    for (const pair of ["babel-oxc", "babel-swc", "oxc-swc"]) {
-      const [left, right] = pair.split("-");
-      await page.getByRole("combobox", { name: "Compare compilers" }).selectOption(pair);
-      await page.getByRole("tab", { name: "Compiler output", exact: true }).click();
-      assert.equal(await page.locator("#left-code").textContent(), inspected[left].code);
-      assert.equal(await page.locator("#right-code").textContent(), inspected[right].code);
-      await page.getByRole("tab", { name: "Diff", exact: true }).click();
-      assert.deepEqual(
-        await page.locator("#diff-code .diff-line").allTextContents(),
-        inspected.codegenDiffs[pair].split("\n"),
-      );
-      const diff = await page.getByRole("link", { name: "Diff", exact: true }).getAttribute("href");
-      assert.ok(existsSync(join(outputDirectory, diff)));
-      assert.equal(diff, `${inspected.id}.${pair === "babel-oxc" ? "diff" : `${pair}.diff`}`);
-      await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
-      assert.ok(
-        (await page.locator("#right-diagnostic-name").textContent()).includes(right.toUpperCase()),
-      );
+    for (const id of ["computed-template-key", "module-suppression"]) {
+      await page.getByRole("button", { name: id, exact: true }).click();
+      const inspected = report.cases.find((fixture) => fixture.id === id);
+      for (const pair of ["babel-oxc", "babel-swc", "oxc-swc"]) {
+        const [left, right] = pair.split("-");
+        await page.getByRole("combobox", { name: "Compare compilers" }).selectOption(pair);
+        await page.getByRole("tab", { name: "Compiler output", exact: true }).click();
+        assert.equal(await page.locator("#left-code").textContent(), inspected[left].code);
+        assert.equal(await page.locator("#right-code").textContent(), inspected[right].code);
+        await page.getByRole("tab", { name: "Diff", exact: true }).click();
+        assert.deepEqual(
+          await page.locator("#diff-code .diff-line").allTextContents(),
+          inspected.codegenDiffs[pair].split("\n"),
+        );
+        const diff = await page
+          .getByRole("link", { name: "Diff", exact: true })
+          .getAttribute("href");
+        assert.ok(existsSync(join(outputDirectory, diff)));
+        assert.equal(diff, `${inspected.id}.${pair === "babel-oxc" ? "diff" : `${pair}.diff`}`);
+        await page.getByRole("tab", { name: "Diagnostics", exact: true }).click();
+        assert.ok(
+          (await page.locator("#right-diagnostic-name").textContent()).includes(
+            right.toUpperCase(),
+          ),
+        );
+      }
     }
+    await page.getByRole("button", { name: "computed-template-key", exact: true }).click();
     await page.getByRole("link", { name: "Control", exact: true }).click();
     assert.equal(await page.locator("#case-title").textContent(), "computed-member-key-control");
     await page.getByRole("tab", { name: "Compiler output", exact: true }).click();
@@ -197,7 +218,7 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
       assert.equal(await page.getByRole("searchbox", { name: "Search fixtures" }).inputValue(), "");
       assert.equal(
         await page.getByRole("combobox", { name: "Compare compilers" }).inputValue(),
-        "babel-swc",
+        "babel-oxc",
       );
       assert.equal(new URL(page.url()).hash, `#${id}`);
     }

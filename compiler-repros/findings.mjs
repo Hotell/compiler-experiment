@@ -19,30 +19,50 @@ export function suppressionFinding(report) {
   const control = byId.get("valid-hooks-no-suppression");
   const invalidSuppressed = byId.get("invalid-hooks-with-suppression");
   const invalid = byId.get("invalid-hooks-no-suppression");
+  const moduleSuppressed = byId.get("module-suppression");
+  const moduleWithoutOptOut = byId.get("module-suppression-no-opt-out");
+  const moduleControl = byId.get("module-suppression-control");
+  const moduleWithoutOptOutControl = byId.get("module-suppression-no-opt-out-control");
   const compilers = ["babel", "oxc", "swc"];
   if (
-    !compilers.every((compiler) => control?.summary[compiler]?.cacheEmitted === true) ||
-    valid?.summary.swc?.cacheEmitted !== true ||
-    !["babel", "oxc"].every(
-      (compiler) =>
-        valid?.summary[compiler]?.cacheEmitted === false &&
-        valid?.summary[compiler]?.reason === "suppression-opt-out",
+    ![control, moduleControl, moduleWithoutOptOutControl].every((fixture) =>
+      compilers.every((compiler) => fixture?.summary[compiler]?.cacheEmitted === true),
     ) ||
+    ![valid, moduleSuppressed, moduleWithoutOptOut].every(
+      (fixture) =>
+        ["babel", "swc"].every((compiler) => fixture?.summary[compiler]?.cacheEmitted === true) &&
+        fixture?.summary.oxc?.cacheEmitted === false &&
+        fixture?.summary.oxc?.reason === "suppression-opt-out",
+    ) ||
+    !compilers.every((compiler) => {
+      const functions = moduleSuppressed?.[compiler]?.functions.filter(
+        (record) => record.name === "One",
+      );
+      return functions?.length === 1 && functions[0].slots.length === 0;
+    }) ||
     ![invalidSuppressed, invalid].every((fixture) =>
       compilers.every((compiler) => fixture?.summary[compiler]?.cacheEmitted === false),
-    )
+    ) ||
+    report.provenance.packages["babel-plugin-react-compiler"].version.includes("-experimental-") ===
+      false
   )
     return null;
 
   return {
-    title: "SWC avoids a redundant-suppression bailout",
+    title: "Babel and SWC avoid module-suppression bailouts",
     summary:
-      "With the tested versions, SWC memoizes the valid effect with an unnecessary hooks-lint suppression. Babel and OXC report a suppression opt-out and emit no memo cache.",
+      'With the tested versions, experimental Babel and SWC memoize Two despite a module-level Rules of Hooks suppression. OXC reports a suppression opt-out and emits no cache for Two. All three respect One\'s local "use no memo" directive.',
     validation:
-      "All three emit no memo cache for the tested invalid conditional-hook examples, with or without suppression.",
+      "The same cache difference remains without One's directive and for a valid effect with a redundant hooks-lint suppression. All three emit no memo cache for the tested invalid conditional-hook examples, with or without suppression.",
     caveat:
       "This demonstrates broader optimization coverage, not proven redundancy detection or overall compiler correctness.",
     evidence: [
+      { id: moduleSuppressed.id, label: "Module suppression + local opt-out" },
+      { id: moduleControl.id, label: "Unsuppressed sibling control" },
+      {
+        id: moduleWithoutOptOut.id,
+        label: "Module suppression, no local opt-out",
+      },
       { id: valid.id, label: "Valid hooks + redundant suppression" },
       { id: invalidSuppressed.id, label: "Invalid hooks + suppression" },
       { id: invalid.id, label: "Invalid hooks, no suppression" },

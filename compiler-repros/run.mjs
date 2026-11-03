@@ -20,28 +20,66 @@ export const compilerOptions = { compilationMode: "infer", target: "19", panicTh
 export const cases = [
   { id: "smoke", group: "guard", target: "Example" },
   { id: "module-opt-out", group: "guard", target: "Example", control: "smoke" },
-  { id: "valid-hooks-no-suppression", group: "suppression-valid-hooks", target: "Example" },
+  {
+    id: "module-suppression-control",
+    group: "module-suppression",
+    target: "Two",
+  },
+  {
+    id: "module-suppression",
+    group: "module-suppression",
+    target: "Two",
+    control: "module-suppression-control",
+  },
+  {
+    id: "module-suppression-no-opt-out-control",
+    group: "module-suppression",
+    target: "Two",
+  },
+  {
+    id: "module-suppression-no-opt-out",
+    group: "module-suppression",
+    target: "Two",
+    control: "module-suppression-no-opt-out-control",
+  },
+  {
+    id: "valid-hooks-no-suppression",
+    group: "suppression-valid-hooks",
+    target: "Example",
+  },
   {
     id: "valid-hooks-redundant-suppression",
     group: "suppression-valid-hooks",
     target: "Example",
     control: "valid-hooks-no-suppression",
   },
-  { id: "invalid-hooks-no-suppression", group: "suppression-invalid-hooks", target: "Example" },
+  {
+    id: "invalid-hooks-no-suppression",
+    group: "suppression-invalid-hooks",
+    target: "Example",
+  },
   {
     id: "invalid-hooks-with-suppression",
     group: "suppression-invalid-hooks",
     target: "Example",
     control: "invalid-hooks-no-suppression",
   },
-  { id: "module-component-control", group: "nested-component", target: "Example" },
+  {
+    id: "module-component-control",
+    group: "nested-component",
+    target: "Example",
+  },
   {
     id: "inline-component",
     group: "nested-component",
     target: "Example",
     control: "module-component-control",
   },
-  { id: "hoisting-before-return-control", group: "hoisting", target: "Example" },
+  {
+    id: "hoisting-before-return-control",
+    group: "hoisting",
+    target: "Example",
+  },
   {
     id: "hoisting-after-return",
     group: "hoisting",
@@ -59,7 +97,11 @@ export const cases = [
     target: "useWidgetStyle",
     control: "computed-member-key-mutation-control",
   },
-  { id: "computed-member-key-control", group: "computed-keys", target: "Example" },
+  {
+    id: "computed-member-key-control",
+    group: "computed-keys",
+    target: "Example",
+  },
   {
     id: "computed-template-key",
     group: "computed-keys",
@@ -170,7 +212,11 @@ export function compileBabel(source, filename, { noEmit = false } = {}) {
     ts.ScriptKind.TSX,
   );
   const sourceFunctions = inspectCode(source);
-  const options = { ...compilerOptions, noEmit };
+  const options = {
+    ...compilerOptions,
+    noEmit,
+    ...(noEmit ? { outputMode: "lint" } : {}),
+  };
   let code = "";
   let exception = null;
   try {
@@ -332,10 +378,17 @@ export function parseAnalyzerOutput(result) {
   try {
     document = JSON.parse(result.stdout ?? "");
     if (
-      document?.schemaVersion !== 2 ||
+      ![2, 3].includes(document?.schemaVersion) ||
       document.tool !== "react-compiler-analyzer" ||
       document.command !== "analyze" ||
       document.mode !== "infer" ||
+      (document.schemaVersion === 3 &&
+        (document.profile?.backend !== "babel" ||
+          typeof document.profile.babelVersion !== "string" ||
+          typeof document.profile.compilerVersion !== "string" ||
+          document.profile.mode !== "infer" ||
+          document.profile.noEmit !== true ||
+          document.emittedCaching !== "unverified")) ||
       !document.summary ||
       !Array.isArray(document.functions) ||
       !Array.isArray(document.unparseable) ||
@@ -349,7 +402,9 @@ export function parseAnalyzerOutput(result) {
           ["compiled", "skipped", "error"].includes(record.status),
       )
     ) {
-      throw new Error("Unexpected RCA JSON schema; expected analyze schemaVersion 2 in infer mode");
+      throw new Error(
+        "Unexpected RCA JSON schema; expected analyze schemaVersion 2 or 3 in infer/noEmit mode",
+      );
     }
   } catch (error) {
     parseError = error.message;
@@ -394,7 +449,7 @@ export function versionWarnings(provenance) {
   return warnings;
 }
 
-function provenance() {
+function provenance(analyzer) {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const names = [
     "@babel/core",
@@ -433,6 +488,7 @@ function provenance() {
       panicThreshold: "none",
       target: "19 (Babel default)",
     },
+    analyzerProfile: analyzer.document?.profile ?? null,
     analyzerConfig: JSON.parse(readFileSync(join(directory, "rca.config.json"), "utf8")),
   };
   return { ...result, warnings: versionWarnings(result) };
@@ -490,6 +546,7 @@ function markdown(report) {
     "",
     "This is a compile-time comparison, not runtime correctness or performance evidence.",
     "All three direct transforms receive identical source and filename, infer mode, React 19 target, and default suppression handling.",
+    "The direct Babel arm uses the explicitly pinned experimental React Compiler, not the latest stable release.",
     "Babel preserves TypeScript; OXC and SWC strip it. Codegen diffs are inspection artifacts, not semantic-equivalence tests.",
     "RCA uses noEmit: true. Its acceptance and memo-slot statistics are not proof of an emitted memo cache.",
     "OXC and SWC have no per-function success logger in these APIs; inspect emitted cache and diagnostic evidence separately. SWC can omit diagnostics for unoptimized functions, so diagnostic telemetry differences do not prove an acceptance difference.",
@@ -502,6 +559,15 @@ function markdown(report) {
       ([name, info]) => `- ${name}: ${info.version} (requested ${info.requested ?? "transitive"})`,
     ),
     ...report.provenance.warnings.map((warning) => `- WARNING: ${warning}`),
+    "",
+    "## RCA Compiler Profile",
+    "",
+    "RCA retains its declared stable Babel compiler dependency. Its analysis can legitimately differ from the experimental direct Babel arm; an analysis mismatch is not an analyzer failure.",
+    "Schema 3 records the resolved compiler profile and marks emitted caching as unverified. The direct Babel analysis pass uses noEmit: true and outputMode: lint to prevent cache emission while retaining memo statistics.",
+    "",
+    "```json",
+    JSON.stringify(report.provenance.analyzerProfile, null, 2),
+    "```",
     "",
     ...(finding
       ? [
@@ -521,11 +587,11 @@ function markdown(report) {
       : []),
     "## Target Functions",
     "",
-    "| Fixture | Babel event | Babel cache | OXC cache | SWC cache | OXC diagnostics | SWC diagnostics | RCA event | RCA/Babel analysis mismatch |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Fixture | Target | Babel event | Babel cache | OXC cache | SWC cache | OXC diagnostics | SWC diagnostics | RCA event | RCA/Babel analysis mismatch |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...report.cases.map(
       (fixture) =>
-        `| ${fixture.id} | ${fixture.summary.babel.reportedStatus}${fixture.summary.babel.reason === "suppression-opt-out" ? " (Suppression opt-out)" : ""} | ${cacheText(fixture.summary.babel)} | ${cacheText(fixture.summary.oxc)} | ${cacheText(fixture.summary.swc)} | ${fixture.oxc.diagnostics.length}${fixture.summary.oxc.reason === "suppression-opt-out" ? " (Suppression opt-out)" : ""} | ${fixture.swc.diagnostics.length} | ${fixture.summary.analyzer.reportedStatus} | ${fixture.babelVsAnalyzer.disagreement ? "yes" : "no"} |`,
+        `| ${fixture.id} | ${fixture.target} | ${fixture.summary.babel.reportedStatus}${fixture.summary.babel.reason === "suppression-opt-out" ? " (Suppression opt-out)" : ""} | ${cacheText(fixture.summary.babel)} | ${cacheText(fixture.summary.oxc)} | ${cacheText(fixture.summary.swc)} | ${fixture.oxc.diagnostics.length}${fixture.summary.oxc.reason === "suppression-opt-out" ? " (Suppression opt-out)" : ""} | ${fixture.swc.diagnostics.length} | ${fixture.summary.analyzer.reportedStatus} | ${fixture.babelVsAnalyzer.disagreement ? "yes" : "no"} |`,
     ),
     "",
     "A missing cache without an explicit diagnostic is not automatically a bailout. not-discovered means no matching Babel/RCA event was observed.",
@@ -549,6 +615,17 @@ function markdown(report) {
       ),
       "",
     );
+    if (fixture.group === "module-suppression") {
+      lines.push(
+        "| Function | Babel cache | OXC cache | SWC cache |",
+        "| --- | --- | --- | --- |",
+        ...["One", "Two"].map(
+          (name) =>
+            `| ${name} | ${cacheText(summarize(fixture.babel, name))} | ${cacheText(summarize(fixture.oxc, name))} | ${cacheText(summarize(fixture.swc, name))} |`,
+        ),
+        "",
+      );
+    }
     for (const [name, result] of [
       ["Babel", fixture.babel],
       ["OXC", fixture.oxc],
@@ -720,7 +797,7 @@ export function runComparison({ outputDirectory = join(directory, "results") } =
   }
   const report = {
     schemaVersion: 1,
-    provenance: provenance(),
+    provenance: provenance(analyzer),
     failures,
     analyzer,
     cases: observations,

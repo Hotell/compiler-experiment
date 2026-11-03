@@ -135,9 +135,17 @@ h2 {
   gap: 8px 24px;
   color: var(--muted);
 }
+.versions > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .versions strong {
   color: var(--ink);
   margin-right: 6px;
+}
+#analyzer-profile {
+  max-width: 1000px;
+  line-height: 1.6;
 }
 .metrics {
   display: grid;

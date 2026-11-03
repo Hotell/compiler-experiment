@@ -174,8 +174,53 @@ test("invalid hook variants differ only by the rules-of-hooks suppression", () =
   assert.ok(control.includes("}, [label]);"));
 });
 
+test("module suppression pairs isolate the comment and function-local opt-out", () => {
+  const source = (id) => readFileSync(fixturePath(id), "utf8");
+  for (const [repro, control] of [
+    ["module-suppression", "module-suppression-control"],
+    ["module-suppression-no-opt-out", "module-suppression-no-opt-out-control"],
+  ]) {
+    assert.equal(cases.find((fixture) => fixture.id === repro)?.target, "Two");
+    assert.equal(cases.find((fixture) => fixture.id === repro)?.control, control);
+    assert.equal(
+      source(repro).replace("/* eslint-disable react-hooks/rules-of-hooks */\n\n", ""),
+      source(control),
+    );
+    assert.deepEqual(
+      inspectCode(source(repro)).map(({ name }) => name),
+      ["One", "Two"],
+    );
+  }
+  for (const [withOptOut, withoutOptOut] of [
+    ["module-suppression", "module-suppression-no-opt-out"],
+    ["module-suppression-control", "module-suppression-no-opt-out-control"],
+  ]) {
+    assert.equal(source(withOptOut).replace('  "use no memo";\n', ""), source(withoutOptOut));
+  }
+});
+
+test("module suppression controls compile siblings without leaking the local opt-out", () => {
+  for (const compiler of [compileBabel, compileOxc, compileSwc]) {
+    for (const id of ["module-suppression-control", "module-suppression-no-opt-out-control"]) {
+      const filename = fixturePath(id);
+      const result = compiler(readFileSync(filename, "utf8"), filename);
+      assert.equal(result.fatal, false, `${compiler.name}: ${id}`);
+      assert.equal(summarize(result, "Two").cacheEmitted, true, `${compiler.name}: ${id}: Two`);
+      assert.equal(
+        summarize(result, "One").cacheEmitted,
+        id === "module-suppression-no-opt-out-control",
+        `${compiler.name}: ${id}: One`,
+      );
+    }
+    const filename = fixturePath("module-suppression");
+    const result = compiler(readFileSync(filename, "utf8"), filename);
+    assert.equal(result.fatal, false, compiler.name);
+    assert.equal(summarize(result, "One").cacheEmitted, false, compiler.name);
+  }
+});
+
 test("all fixtures parse and all three compiler adapters return structured observations", () => {
-  assert.equal(cases.length, 14);
+  assert.equal(cases.length, 18);
   for (const fixture of cases) {
     const filename = fixturePath(fixture.id);
     const source = readFileSync(filename, "utf8");
@@ -236,6 +281,46 @@ test("RCA failures preserve valid JSON and stderr without treating nonzero exit 
     JSON.stringify({ ...document, functions: [{}] }),
   ]) {
     assert.equal(parseAnalyzerOutput({ status: 0, stdout, stderr: "" }).toolFailure, true);
+  }
+});
+
+test("RCA schema 3 preserves the resolved compiler profile and unverified emitted caching", () => {
+  const document = {
+    schemaVersion: 3,
+    tool: "react-compiler-analyzer",
+    command: "analyze",
+    mode: "infer",
+    profile: {
+      backend: "babel",
+      babelVersion: "7.29.7",
+      compilerVersion: "1.0.0",
+      mode: "infer",
+      parserPlugins: [],
+      noEmit: true,
+      panicThreshold: "none",
+      target: "compiler-default",
+      suppressionRules: "compiler-default",
+    },
+    emittedCaching: "unverified",
+    summary: {},
+    functions: [],
+    unparseable: [],
+  };
+  const parse = (input) =>
+    parseAnalyzerOutput({
+      status: 0,
+      stdout: JSON.stringify(input),
+      stderr: "",
+    });
+  assert.equal(parse(document).toolFailure, false);
+  assert.deepEqual(parse(document).document, document);
+  for (const invalid of [
+    { ...document, profile: null },
+    { ...document, emittedCaching: undefined },
+    { ...document, profile: { ...document.profile, noEmit: false } },
+    { ...document, profile: { ...document.profile, mode: "annotation" } },
+  ]) {
+    assert.equal(parse(invalid).toolFailure, true);
   }
 });
 
@@ -376,7 +461,14 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
   const report = runComparison({ outputDirectory });
   assert.deepEqual(report.failures, []);
   assert.equal(report.cases.length, cases.length);
+  assert.equal(report.analyzer.document.schemaVersion, 3);
   assert.equal(report.analyzer.document.summary.unparseableFiles, 0);
+  assert.equal(report.analyzer.document.emittedCaching, "unverified");
+  assert.deepEqual(report.provenance.analyzerProfile, report.analyzer.document.profile);
+  assert.equal(
+    report.provenance.analyzerProfile.compilerVersion,
+    report.provenance.analyzerCompiler["babel-plugin-react-compiler"].version,
+  );
   const pins = JSON.parse(
     readFileSync(new URL("../package.json", import.meta.url), "utf8"),
   ).devDependencies;
@@ -385,7 +477,13 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
   }
   for (const fixture of report.cases) {
     assert.match(fixture.sourceHash, /^[a-f0-9]{64}$/);
-    assert.equal(fixture.babelVsAnalyzer.disagreement, false, fixture.id);
+    assert.equal(fixture.summary.babelAnalysis.cacheEmitted, false, fixture.id);
+    assert.equal(
+      fixture.babelVsAnalyzer.disagreement,
+      fixture.summary.babelAnalysis.reportedStatus !== fixture.summary.analyzer.reportedStatus ||
+        fixture.babelVsAnalyzer.analysisMemoSlots !== fixture.babelVsAnalyzer.analyzerMemoSlots,
+      fixture.id,
+    );
     for (const suffix of [
       "source.tsx",
       "babel.tsx",
@@ -418,22 +516,34 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
   const suppressed = report.cases.find(
     (fixture) => fixture.id === "valid-hooks-redundant-suppression",
   );
-  assert.equal(suppressed.summary.babel.reason, "suppression-opt-out");
-  assert.equal(suppressed.summary.oxc.reason, "suppression-opt-out");
+  for (const compiler of ["babel", "oxc"]) {
+    assert.equal(
+      suppressed.summary[compiler].reason,
+      suppressionOptOut(suppressed[compiler], "Example") ? "suppression-opt-out" : null,
+    );
+  }
   assert.equal(suppressed.summary.swc.reason, null);
-  assert.equal(suppressed.summary.babel.reportedStatus, "error");
-  assert.equal(suppressed.babel.diagnostics[0].kind, "CompileError");
-  assert.equal(suppressed.babel.diagnostics[0].detail.category, "Suppression");
   assert.equal(
     suppressed.oxc.diagnostics[0].message,
     "React rule suppression prevents optimization",
   );
   assert.ok(suppressionFinding(report));
+  assert.ok(suppressionFinding(report).evidence.some(({ id }) => id === "module-suppression"));
   assert.ok(
     readFileSync(join(outputDirectory, "comparison.md"), "utf8").includes("## Key Finding"),
   );
   assert.ok(
     readFileSync(join(outputDirectory, "comparison.md"), "utf8").includes("Suppression opt-out"),
+  );
+  assert.ok(
+    readFileSync(join(outputDirectory, "comparison.md"), "utf8").includes(
+      "## RCA Compiler Profile",
+    ),
+  );
+  assert.ok(
+    readFileSync(join(outputDirectory, "comparison.md"), "utf8").includes(
+      "| Function | Babel cache | OXC cache | SWC cache |",
+    ),
   );
   for (const mutate of [
     (changed) => changed.failures.push("Incomplete run"),
@@ -461,6 +571,19 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
       changed.cases.find(
         (fixture) => fixture.id === "valid-hooks-no-suppression",
       ).summary.babel.cacheEmitted = false;
+    },
+    (changed) => {
+      changed.cases = changed.cases.filter((fixture) => fixture.id !== "module-suppression");
+    },
+    (changed) => {
+      changed.cases.find(
+        (fixture) => fixture.id === "module-suppression",
+      ).summary.babel.cacheEmitted = false;
+    },
+    (changed) => {
+      changed.cases
+        .find((fixture) => fixture.id === "module-suppression")
+        .babel.functions.find((record) => record.name === "One").slots = [1];
     },
   ]) {
     const changed = structuredClone(report);

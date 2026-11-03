@@ -52,6 +52,17 @@ function cacheCell(summary, detail) {
 export function renderHtml(input) {
   const report = publicEvidence(input);
   const finding = suppressionFinding(report);
+  const babelExperimental =
+    report.provenance.packages["babel-plugin-react-compiler"].version.includes("-experimental-");
+  const analyzerCompiler =
+    report.provenance.analyzerCompiler["babel-plugin-react-compiler"].version;
+  const versionLabels = {
+    "@babel/core": "Babel host",
+    "babel-plugin-react-compiler": babelExperimental ? "Babel (experimental)" : "Babel",
+    "oxc-transform-react": "OXC",
+    "@swc/core": "SWC",
+    "@fluentui/react-compiler-analyzer": "RCA",
+  };
   const cacheDivergent = (fixture) =>
     Object.values(fixture.comparisons).some(
       (comparison) => comparison.cacheMismatch || comparison.slotsMismatch,
@@ -77,17 +88,10 @@ export function renderHtml(input) {
     )
     .join("");
   const versions = Object.entries(report.provenance.packages)
-    .filter(([name]) =>
-      [
-        "babel-plugin-react-compiler",
-        "oxc-transform-react",
-        "@swc/core",
-        "@fluentui/react-compiler-analyzer",
-      ].includes(name),
-    )
+    .filter(([name]) => name in versionLabels)
     .map(
       ([name, info]) =>
-        `<span><strong>${name === "babel-plugin-react-compiler" ? "Babel" : name === "oxc-transform-react" ? "OXC" : name === "@swc/core" ? "SWC" : "RCA"}</strong> ${escapeHtml(info.version)}</span>`,
+        `<span><strong>${versionLabels[name]}</strong> ${escapeHtml(info.version)}</span>`,
     )
     .join("");
   const payload = JSON.stringify(report).replaceAll("<", "\\u003c");
@@ -96,7 +100,7 @@ export function renderHtml(input) {
 <body>
   <header class="site-header"><a class="brand" href="../" aria-label="Signal comparisons"><span class="brand-mark">S<span>.</span></span><span class="brand-name">signal<span>.</span></span><span class="brand-context">compiler lab</span></a><a class="text-link" href="../">${icon(ArrowLeft)} All comparisons</a></header>
   <main class="compat-main">
-    <section class="compat-heading"><div><span class="eyebrow">REACT 19 / TRANSFORM EVIDENCE</span><h1>Compiler compatibility</h1><div class="versions">${versions}</div></div><a class="text-link" href="comparison.json" download>${icon(FileJson)} Full evidence</a></section>
+    <section class="compat-heading"><div><span class="eyebrow">REACT 19 / TRANSFORM EVIDENCE</span><h1>Compiler compatibility</h1><div class="versions">${versions}</div><p class="muted" id="analyzer-profile">RCA analyzes Babel compiler ${escapeHtml(analyzerCompiler)} with noEmit. Its compiler version differs from the direct Babel arm; an analysis mismatch is not an analyzer failure.</p></div><a class="text-link" href="comparison.json" download>${icon(FileJson)} Full evidence</a></section>
     <section class="metrics" aria-label="Comparison summary"><div><strong>${report.cases.length}</strong><span>isolated fixtures</span></div><div class="${differences ? "metric-difference" : ""}"><strong id="cache-differences">${differences}</strong><span>Compiler cache differences</span></div></section>
     ${finding ? `<section id="key-finding" class="key-finding" aria-label="Key finding"><span class="eyebrow">KEY FINDING</span><h2>${escapeHtml(finding.title)}</h2><p>${escapeHtml(finding.summary)}</p><p>${escapeHtml(finding.validation)}</p><p class="finding-caveat">${escapeHtml(finding.caveat)}</p><nav class="finding-evidence" aria-label="Finding evidence">${finding.evidence.map((evidence) => `<a class="text-link" href="#${escapeHtml(evidence.id)}" data-evidence-case="${escapeHtml(evidence.id)}">${escapeHtml(evidence.label)} ${icon(ArrowUpRight)}</a>`).join("")}</nav></section>` : ""}
     ${report.failures.length ? `<aside class="failure-banner" role="alert"><strong>Incomplete run</strong><ul>${report.failures.map((failure) => `<li>${escapeHtml(failure)}</li>`).join("")}</ul></aside>` : ""}
@@ -111,7 +115,7 @@ export function renderHtml(input) {
       <div id="panel-diagnostics" class="output-grid" role="tabpanel" aria-labelledby="tab-diagnostics" hidden><section class="code-pane"><header><strong id="left-diagnostic-name">Babel diagnostics</strong></header><pre id="left-diagnostics" tabindex="0"></pre></section><section class="code-pane"><header><strong id="right-diagnostic-name">OXC diagnostics</strong></header><pre id="right-diagnostics" tabindex="0"></pre></section></div>
       <p id="source-hash" class="source-hash"></p>
     </section>
-    <details class="method"><summary>Method &amp; provenance</summary><p>Identical TSX inputs. Infer mode, React 19 target, default suppression handling. Babel preserves TypeScript; OXC and SWC remove it. Codegen differences do not prove semantic differences.</p><p>Cache emission is observed in generated output. RCA runs Babel with noEmit and reports analysis events, not emitted code. OXC and SWC have no per-function success logger in these APIs. SWC can omit diagnostics for unoptimized functions; diagnostic telemetry differences do not prove different acceptance. No cache without a diagnostic is not automatically a bailout.</p><p>The mutation-shaped hooks may not be discovered under infer. Their mutation-free component controls independently test computed-key lowering. Runtime correctness and performance are not measured here.</p><pre>${escapeHtml(JSON.stringify(report.provenance, null, 2))}</pre></details>
+    <details class="method"><summary>Method &amp; provenance</summary><p>Identical TSX inputs. Infer mode, React 19 target, default suppression handling. Babel preserves TypeScript; OXC and SWC remove it. Codegen differences do not prove semantic differences.</p><p>Cache emission is observed in generated output. The direct Babel analysis pass uses noEmit and outputMode: lint. RCA uses its own resolved Babel compiler with noEmit and reports analysis events, not emitted code. Schema 3 preserves its compiler profile and marks emitted caching as unverified. Different compiler versions can produce legitimate analysis mismatches. OXC and SWC have no per-function success logger in these APIs. SWC can omit diagnostics for unoptimized functions; diagnostic telemetry differences do not prove different acceptance. No cache without a diagnostic is not automatically a bailout.</p><p>The mutation-shaped hooks may not be discovered under infer. Their mutation-free component controls independently test computed-key lowering. Runtime correctness and performance are not measured here.</p><pre>${escapeHtml(JSON.stringify(report.provenance, null, 2))}</pre></details>
     <footer><span>BUILD-TIME EVIDENCE / NOT A PERFORMANCE BENCHMARK</span><a class="text-link" href="comparison.md">Markdown ${icon(ArrowUpRight)}</a></footer>
   </main><script type="application/json" id="comparison-data">${payload}</script><script>${readFileSync(join(directory, "report.js"), "utf8")}</script>
 </body></html>`;

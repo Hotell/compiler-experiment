@@ -148,7 +148,7 @@
   for (const link of document.querySelectorAll("[data-evidence-case]")) {
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      element("compiler-pair").value = "babel-swc";
+      element("compiler-pair").value = "babel-oxc";
       revealFixture(link.dataset.evidenceCase);
     });
   }
