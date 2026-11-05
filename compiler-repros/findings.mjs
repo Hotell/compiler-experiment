@@ -16,9 +16,9 @@ export function suppressionFinding(report) {
   if (report.failures?.length) return null;
   const byId = new Map(report.cases.map((fixture) => [fixture.id, fixture]));
   const valid = byId.get("valid-hooks-redundant-suppression");
-  const control = byId.get("valid-hooks-no-suppression");
+  const control = byId.get("valid-hooks-redundant-suppression-control");
   const invalidSuppressed = byId.get("invalid-hooks-with-suppression");
-  const invalid = byId.get("invalid-hooks-no-suppression");
+  const invalid = byId.get("invalid-hooks-with-suppression-control");
   const moduleSuppressed = byId.get("module-suppression");
   const moduleWithoutOptOut = byId.get("module-suppression-no-opt-out");
   const moduleControl = byId.get("module-suppression-control");

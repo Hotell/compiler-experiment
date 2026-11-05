@@ -74,9 +74,9 @@ Start each app in its own terminal. Use `yarn fmt` to format authored files and 
 
 ## Isolated compiler repros
 
-Run `yarn repro:compilers` to compare Babel React Compiler, `oxc-transform-react`, and SWC's native React Compiler, with the installed React Compiler Analyzer as a Babel-analysis cross-check. Open the generated `compiler-repros/results/index.html` for the interactive report, including all three compiler pairs. Pages publishes it at [Compiler compatibility](https://hotell.github.io/compiler-experiment/compiler-repros/) after the next successful deployment of these changes, with a link from the chooser. `yarn check:compiler-repros` validates the report and its Pages route independently of the app benchmarks. The [repro guide](compiler-repros/README.md) covers public evidence, verification commands, and the native SWC/Rspack integration.
+Run `yarn repro:compilers` to compare Babel React Compiler, OXC, and native SWC, with RCA as an analysis cross-check. The [hosted report](https://hotell.github.io/compiler-experiment/compiler-repros/) and generated `compiler-repros/results/index.html` group paired inputs into guards, suppressions and hooks, components and scope, and syntax support. `yarn check:compiler-repros` validates the harness and Pages route independently of app benchmarks. The [repro guide](compiler-repros/README.md) lists every pair, verification commands, and evidence caveats.
 
-The repro Babel arm explicitly uses `0.0.0-experimental-a1856f3-20260507`; RCA 0.0.4 retains its declared stable compiler 1.0.0. The report labels the release-channel split and preserves RCA's schema-3 compiler profile. Its 18 fixtures include paired module-level ESLint suppressions with and without a sibling's local `"use no memo"`, with per-function cache evidence and all three compiler-pair diffs. These dependency updates do not upgrade the compiler app's separately pinned OXC integration.
+Direct Babel uses an explicitly pinned experimental compiler; RCA retains its declared stable compiler. The report records both versions and distinguishes analysis from emitted-cache evidence. The repro toolchain does not change the compiler app's separately pinned OXC integration.
 
 ## Compiler ecosystem activity
 

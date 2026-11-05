@@ -2,6 +2,8 @@
   const report = JSON.parse(document.getElementById("comparison-data").textContent);
   const fixtures = report.cases;
   const byId = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+  const categories = new Map(report.categories.map((category) => [category.id, category]));
+  const aliases = new Map(Object.entries(report.caseAliases));
   const element = (id) => document.getElementById(id);
   const cacheDiffers = (fixture) =>
     Object.values(fixture.comparisons).some(
@@ -36,7 +38,7 @@
     if (!fixture) return;
     selected = id;
     element("case-title").textContent = id;
-    element("case-group").textContent = fixture.group.toUpperCase().replaceAll("-", " ");
+    element("case-group").textContent = categories.get(fixture.category).label;
     element("case-target").textContent =
       `Target: ${fixture.target} / Babel ${fixture.summary.babel.reason === "suppression-opt-out" ? "suppression opt-out" : fixture.summary.babel.reportedStatus} / RCA ${fixture.summary.analyzer.reportedStatus}`;
     const pair = element("compiler-pair").value;
@@ -76,9 +78,11 @@
   }
 
   function revealFixture(id, scroll = true) {
+    id = aliases.get(id) ?? id;
     if (!byId.has(id)) return;
     const row = document.querySelector(`[data-row="${id}"]`);
     if (row.hidden) {
+      element("category-filter").value = "all";
       element("outcome-filter").value = "all";
       element("fixture-search").value = "";
       filterFixtures();
@@ -90,6 +94,8 @@
   function filterFixtures() {
     const query = element("fixture-search").value.toLowerCase().trim();
     const mode = element("outcome-filter").value;
+    const category = element("category-filter").value;
+    const counts = new Map(report.categories.map((entry) => [entry.id, 0]));
     let visible = 0;
     for (const fixture of fixtures) {
       const matchesMode =
@@ -100,10 +106,21 @@
         (mode === "controls" && !fixture.control);
       const matches = Boolean(
         matchesMode &&
-        `${fixture.id} ${fixture.group} ${fixture.target}`.toLowerCase().includes(query),
+        (category === "all" || category === fixture.category) &&
+        `${fixture.id} ${fixture.group} ${fixture.target} ${categories.get(fixture.category).label}`
+          .toLowerCase()
+          .includes(query),
       );
       document.querySelector(`[data-row="${fixture.id}"]`).hidden = !matches;
-      if (matches) visible++;
+      if (matches) {
+        visible++;
+        counts.set(fixture.category, counts.get(fixture.category) + 1);
+      }
+    }
+    for (const [id, count] of counts) {
+      document.querySelector(`[data-category="${id}"]`).hidden = count === 0;
+      const total = fixtures.filter((fixture) => fixture.category === id).length;
+      document.querySelector(`[data-category-count="${id}"]`).textContent = `${count} of ${total}`;
     }
     element("visible-count").textContent = `${visible} of ${fixtures.length}`;
     element("empty-row").hidden = visible !== 0;
@@ -153,13 +170,15 @@
     });
   }
   element("fixture-search").addEventListener("input", filterFixtures);
+  element("category-filter").addEventListener("change", filterFixtures);
   element("outcome-filter").addEventListener("change", filterFixtures);
   element("compiler-pair").addEventListener("change", () => selectFixture(selected));
   window.addEventListener("hashchange", () => revealFixture(location.hash.slice(1)));
   filterFixtures();
+  const initialId = aliases.get(location.hash.slice(1)) ?? location.hash.slice(1);
   revealFixture(
-    byId.has(location.hash.slice(1))
-      ? location.hash.slice(1)
+    byId.has(initialId)
+      ? initialId
       : (fixtures.find(cacheDiffers) ?? fixtures.find(differs) ?? fixtures[0]).id,
     false,
   );

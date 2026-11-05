@@ -23,6 +23,59 @@ import {
   versionWarnings,
 } from "./run.mjs";
 
+test("fixture pairs use normalized names and cover every input file", () => {
+  const byId = new Map(cases.map((fixture) => [fixture.id, fixture]));
+  assert.equal(byId.size, cases.length);
+  const controls = new Set();
+  for (const fixture of cases.filter((entry) => entry.control)) {
+    assert.equal(fixture.control, `${fixture.id}-control`);
+    assert.ok(byId.has(fixture.control), fixture.control);
+    assert.equal(byId.get(fixture.control).control, undefined);
+    controls.add(fixture.control);
+  }
+  for (const fixture of cases.filter((entry) => !entry.control)) {
+    assert.ok(controls.has(fixture.id), `Unpaired control: ${fixture.id}`);
+  }
+  assert.deepEqual(
+    readdirSync(new URL("./cases/", import.meta.url))
+      .filter((name) => name.endsWith(".tsx"))
+      .sort(),
+    cases.map((fixture) => `${fixture.id}.tsx`).sort(),
+  );
+});
+
+test("fixture categories cover each pair and legacy IDs resolve to renamed controls", async () => {
+  const { caseCategories, caseAliases } = await import("./run.mjs");
+  assert.ok(Array.isArray(caseCategories));
+  assert.deepEqual(
+    caseCategories.map(({ id }) => id),
+    ["guards", "suppressions-hooks", "component-scope", "syntax-support"],
+  );
+  const groups = caseCategories.flatMap((category) => category.groups);
+  assert.equal(new Set(groups).size, groups.length);
+  assert.deepEqual(new Set(groups), new Set(cases.map((fixture) => fixture.group)));
+  for (const fixture of cases) {
+    const category = caseCategories.find((entry) => entry.groups.includes(fixture.group));
+    assert.equal(fixture.category, category.id, fixture.id);
+    if (fixture.control) {
+      assert.equal(cases.find((entry) => entry.id === fixture.control).category, fixture.category);
+    }
+  }
+  assert.deepEqual(caseAliases, {
+    smoke: "module-opt-out-control",
+    "valid-hooks-no-suppression": "valid-hooks-redundant-suppression-control",
+    "invalid-hooks-no-suppression": "invalid-hooks-with-suppression-control",
+    "module-component-control": "inline-component-control",
+    "hoisting-before-return-control": "hoisting-after-return-control",
+    "computed-member-key-mutation-control": "computed-template-key-mutation-control",
+    "computed-member-key-control": "computed-template-key-control",
+  });
+  for (const [previous, current] of Object.entries(caseAliases)) {
+    assert.ok(!cases.some((fixture) => fixture.id === previous));
+    assert.ok(cases.some((fixture) => fixture.id === current));
+  }
+});
+
 test("cache inspection follows imported bindings and isolates nested functions", () => {
   const records = inspectCode(`
     import { c as cache } from "react/compiler-runtime";
@@ -65,7 +118,7 @@ test("an acceptance event does not prove an emitted cache", () => {
 test("positive and opt-out guards inspect real output from all three compilers", () => {
   for (const compiler of [compileBabel, compileOxc, compileSwc]) {
     for (const [id, expected] of [
-      ["smoke", true],
+      ["module-opt-out-control", true],
       ["module-opt-out", false],
     ]) {
       const filename = fixturePath(id);
@@ -107,7 +160,7 @@ test("suppression labels require a reported reason rather than source text or mi
 });
 
 test("Babel analysis-only mode records events without attributing emitted code", () => {
-  const filename = fixturePath("smoke");
+  const filename = fixturePath("module-opt-out-control");
   const result = compileBabel(readFileSync(filename, "utf8"), filename, { noEmit: true });
   assert.ok(result.events.some((event) => event.kind === "CompileSuccess"));
   assert.equal(summarize(result, "Example").cacheEmitted, false);
@@ -124,7 +177,7 @@ test("OXC explicitly requests recoverable compiler diagnostics", () => {
 });
 
 test("SWC preserves unavailable success telemetry and captures fatal parse errors", () => {
-  const filename = fixturePath("smoke");
+  const filename = fixturePath("module-opt-out-control");
   const result = compileSwc(readFileSync(filename, "utf8"), filename);
   assert.equal(result.events, null);
   assert.equal(summarize(result, "Example").reportedStatus, "unavailable");
@@ -148,11 +201,11 @@ test("pragma and computed-key pairs change only the investigated expression", ()
       "  // eslint-disable-next-line react-hooks/exhaustive-deps\n",
       "",
     ),
-    source("valid-hooks-no-suppression"),
+    source("valid-hooks-redundant-suppression-control"),
   );
   for (const [repro, control] of [
-    ["computed-template-key", "computed-member-key-control"],
-    ["computed-template-key-mutation", "computed-member-key-mutation-control"],
+    ["computed-template-key", "computed-template-key-control"],
+    ["computed-template-key-mutation", "computed-template-key-mutation-control"],
   ]) {
     assert.equal(
       source(repro)
@@ -164,7 +217,7 @@ test("pragma and computed-key pairs change only the investigated expression", ()
 });
 
 test("invalid hook variants differ only by the rules-of-hooks suppression", () => {
-  const control = readFileSync(fixturePath("invalid-hooks-no-suppression"), "utf8");
+  const control = readFileSync(fixturePath("invalid-hooks-with-suppression-control"), "utf8");
   const suppressed = readFileSync(fixturePath("invalid-hooks-with-suppression"), "utf8");
   assert.equal(
     suppressed.replace("    // eslint-disable-next-line react-hooks/rules-of-hooks\n", ""),
@@ -220,7 +273,7 @@ test("module suppression controls compile siblings without leaking the local opt
 });
 
 test("all fixtures parse and all three compiler adapters return structured observations", () => {
-  assert.equal(cases.length, 18);
+  assert.equal(cases.length, 34);
   for (const fixture of cases) {
     const filename = fixturePath(fixture.id);
     const source = readFileSync(filename, "utf8");
@@ -239,19 +292,26 @@ test("RCA joins use file and source location, not just repeated function names",
   const functions = inspectCode(source);
   const records = [
     ...functions.map((record) => ({
-      file: fixturePath("smoke"),
+      file: fixturePath("module-opt-out-control"),
       function: record.name,
       line: record.line,
       column: record.column,
     })),
-    { file: fixturePath("module-opt-out"), function: "Example", line: 1, column: 0 },
+    {
+      file: fixturePath("module-opt-out"),
+      function: "Example",
+      line: 1,
+      column: 0,
+    },
   ];
-  assert.deepEqual(matchAnalyzer(records, fixturePath("smoke"), source, functions[0]), [
-    records[0],
-  ]);
-  assert.deepEqual(matchAnalyzer(records, fixturePath("smoke"), source, functions[1]), [
-    records[1],
-  ]);
+  assert.deepEqual(
+    matchAnalyzer(records, fixturePath("module-opt-out-control"), source, functions[0]),
+    [records[0]],
+  );
+  assert.deepEqual(
+    matchAnalyzer(records, fixturePath("module-opt-out-control"), source, functions[1]),
+    [records[1]],
+  );
 });
 
 test("RCA failures preserve valid JSON and stderr without treating nonzero exit as parity", () => {
@@ -344,7 +404,9 @@ test("public evidence removes workspace and executable paths recursively", () =>
   const evidence = publicEvidence({
     path: `${process.cwd()}/node_modules/example/index.js`,
     command: [process.execPath, `${process.cwd()}/compiler-repros/run.mjs`],
-    diagnostic: { codeframe: `at ${process.cwd()}/compiler-repros/cases/smoke.tsx:1:1` },
+    diagnostic: {
+      codeframe: `at ${process.cwd()}/compiler-repros/cases/module-opt-out-control.tsx:1:1`,
+    },
   });
   assert.equal(evidence.path, "node_modules/example/index.js");
   assert.equal(evidence.command[0], "node");
@@ -549,7 +611,7 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
     (changed) => changed.failures.push("Incomplete run"),
     (changed) => {
       changed.cases = changed.cases.filter(
-        (fixture) => fixture.id !== "invalid-hooks-no-suppression",
+        (fixture) => fixture.id !== "invalid-hooks-with-suppression-control",
       );
     },
     (changed) => {
@@ -569,7 +631,7 @@ test("full comparison includes every fixture, raw artifacts, and analysis-only R
     },
     (changed) => {
       changed.cases.find(
-        (fixture) => fixture.id === "valid-hooks-no-suppression",
+        (fixture) => fixture.id === "valid-hooks-redundant-suppression-control",
       ).summary.babel.cacheEmitted = false;
     },
     (changed) => {
