@@ -17,9 +17,54 @@ export const directory = dirname(fileURLToPath(import.meta.url));
 const root = dirname(directory);
 export const compilerOptions = { compilationMode: "infer", target: "19", panicThreshold: "none" };
 
+export const caseCategories = [
+  { id: "guards", label: "Guards", groups: ["guard"] },
+  {
+    id: "suppressions-hooks",
+    label: "Suppressions & hooks",
+    groups: ["module-suppression", "suppression-valid-hooks", "suppression-invalid-hooks"],
+  },
+  {
+    id: "component-scope",
+    label: "Components & scope",
+    groups: ["nested-component", "hoisting"],
+  },
+  {
+    id: "syntax-support",
+    label: "Syntax support",
+    groups: [
+      "computed-keys-mutation",
+      "computed-keys",
+      "babel-reject-dynamic-import",
+      "babel-reject-try-finally",
+      "babel-reject-try-without-catch",
+      "babel-reject-throw-in-try",
+      "babel-reject-value-block-in-try",
+      "babel-reject-logical-test-block",
+      "babel-reject-nullish-assignment",
+      "babel-reject-captured-update",
+    ],
+  },
+];
+
+export const caseAliases = {
+  smoke: "module-opt-out-control",
+  "valid-hooks-no-suppression": "valid-hooks-redundant-suppression-control",
+  "invalid-hooks-no-suppression": "invalid-hooks-with-suppression-control",
+  "module-component-control": "inline-component-control",
+  "hoisting-before-return-control": "hoisting-after-return-control",
+  "computed-member-key-mutation-control": "computed-template-key-mutation-control",
+  "computed-member-key-control": "computed-template-key-control",
+};
+
 export const cases = [
-  { id: "smoke", group: "guard", target: "Example" },
-  { id: "module-opt-out", group: "guard", target: "Example", control: "smoke" },
+  { id: "module-opt-out-control", group: "guard", target: "Example" },
+  {
+    id: "module-opt-out",
+    group: "guard",
+    target: "Example",
+    control: "module-opt-out-control",
+  },
   {
     id: "module-suppression-control",
     group: "module-suppression",
@@ -43,7 +88,7 @@ export const cases = [
     control: "module-suppression-no-opt-out-control",
   },
   {
-    id: "valid-hooks-no-suppression",
+    id: "valid-hooks-redundant-suppression-control",
     group: "suppression-valid-hooks",
     target: "Example",
   },
@@ -51,10 +96,10 @@ export const cases = [
     id: "valid-hooks-redundant-suppression",
     group: "suppression-valid-hooks",
     target: "Example",
-    control: "valid-hooks-no-suppression",
+    control: "valid-hooks-redundant-suppression-control",
   },
   {
-    id: "invalid-hooks-no-suppression",
+    id: "invalid-hooks-with-suppression-control",
     group: "suppression-invalid-hooks",
     target: "Example",
   },
@@ -62,10 +107,10 @@ export const cases = [
     id: "invalid-hooks-with-suppression",
     group: "suppression-invalid-hooks",
     target: "Example",
-    control: "invalid-hooks-no-suppression",
+    control: "invalid-hooks-with-suppression-control",
   },
   {
-    id: "module-component-control",
+    id: "inline-component-control",
     group: "nested-component",
     target: "Example",
   },
@@ -73,10 +118,10 @@ export const cases = [
     id: "inline-component",
     group: "nested-component",
     target: "Example",
-    control: "module-component-control",
+    control: "inline-component-control",
   },
   {
-    id: "hoisting-before-return-control",
+    id: "hoisting-after-return-control",
     group: "hoisting",
     target: "Example",
   },
@@ -84,10 +129,10 @@ export const cases = [
     id: "hoisting-after-return",
     group: "hoisting",
     target: "Example",
-    control: "hoisting-before-return-control",
+    control: "hoisting-after-return-control",
   },
   {
-    id: "computed-member-key-mutation-control",
+    id: "computed-template-key-mutation-control",
     group: "computed-keys-mutation",
     target: "useWidgetStyle",
   },
@@ -95,10 +140,10 @@ export const cases = [
     id: "computed-template-key-mutation",
     group: "computed-keys-mutation",
     target: "useWidgetStyle",
-    control: "computed-member-key-mutation-control",
+    control: "computed-template-key-mutation-control",
   },
   {
-    id: "computed-member-key-control",
+    id: "computed-template-key-control",
     group: "computed-keys",
     target: "Example",
   },
@@ -106,9 +151,100 @@ export const cases = [
     id: "computed-template-key",
     group: "computed-keys",
     target: "Example",
-    control: "computed-member-key-control",
+    control: "computed-template-key-control",
   },
-];
+  {
+    id: "dynamic-import-control",
+    group: "babel-reject-dynamic-import",
+    target: "Example",
+  },
+  {
+    id: "dynamic-import",
+    group: "babel-reject-dynamic-import",
+    target: "Example",
+    control: "dynamic-import-control",
+  },
+  {
+    id: "try-catch-finally-control",
+    group: "babel-reject-try-finally",
+    target: "Example",
+  },
+  {
+    id: "try-catch-finally",
+    group: "babel-reject-try-finally",
+    target: "Example",
+    control: "try-catch-finally-control",
+  },
+  {
+    id: "try-finally-no-catch-control",
+    group: "babel-reject-try-without-catch",
+    target: "Example",
+  },
+  {
+    id: "try-finally-no-catch",
+    group: "babel-reject-try-without-catch",
+    target: "Example",
+    control: "try-finally-no-catch-control",
+  },
+  {
+    id: "throw-in-try-control",
+    group: "babel-reject-throw-in-try",
+    target: "Example",
+  },
+  {
+    id: "throw-in-try",
+    group: "babel-reject-throw-in-try",
+    target: "Example",
+    control: "throw-in-try-control",
+  },
+  {
+    id: "value-block-in-try-control",
+    group: "babel-reject-value-block-in-try",
+    target: "Example",
+  },
+  {
+    id: "value-block-in-try",
+    group: "babel-reject-value-block-in-try",
+    target: "Example",
+    control: "value-block-in-try-control",
+  },
+  {
+    id: "logical-test-block-control",
+    group: "babel-reject-logical-test-block",
+    target: "Example",
+  },
+  {
+    id: "logical-test-block",
+    group: "babel-reject-logical-test-block",
+    target: "Example",
+    control: "logical-test-block-control",
+  },
+  {
+    id: "nullish-assignment-control",
+    group: "babel-reject-nullish-assignment",
+    target: "Example",
+  },
+  {
+    id: "nullish-assignment",
+    group: "babel-reject-nullish-assignment",
+    target: "Example",
+    control: "nullish-assignment-control",
+  },
+  {
+    id: "captured-update-expression-control",
+    group: "babel-reject-captured-update",
+    target: "Example",
+  },
+  {
+    id: "captured-update-expression",
+    group: "babel-reject-captured-update",
+    target: "Example",
+    control: "captured-update-expression-control",
+  },
+].map((fixture) => ({
+  ...fixture,
+  category: caseCategories.find((category) => category.groups.includes(fixture.group)).id,
+}));
 
 export function fixturePath(id) {
   if (!cases.some((fixture) => fixture.id === id)) throw new Error(`Unknown fixture: ${id}`);
@@ -786,7 +922,7 @@ export function runComparison({ outputDirectory = join(directory, "results") } =
     };
   });
   for (const [id, expected] of [
-    ["smoke", true],
+    ["module-opt-out-control", true],
     ["module-opt-out", false],
   ]) {
     const fixture = observations.find((record) => record.id === id);
@@ -800,6 +936,8 @@ export function runComparison({ outputDirectory = join(directory, "results") } =
     provenance: provenance(analyzer),
     failures,
     analyzer,
+    categories: caseCategories,
+    caseAliases,
     cases: observations,
   };
   writeFileSync(join(outputDirectory, "analyzer.json"), analyzer.stdout);

@@ -24,11 +24,45 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
   const diagnosticFixtures = report.cases.filter((fixture) =>
     ["babel", "oxc", "swc"].some((compiler) => fixture[compiler].diagnostics.length),
   );
+  const assertVisible = async (page, expected) => {
+    assert.deepEqual(
+      await page
+        .locator("[data-row]:visible")
+        .evaluateAll((rows) => rows.map((row) => row.dataset.row)),
+      expected.map((fixture) => fixture.id),
+    );
+    for (const category of report.categories) {
+      const count = expected.filter((fixture) => fixture.category === category.id).length;
+      const total = report.cases.filter((fixture) => fixture.category === category.id).length;
+      assert.equal(await page.locator(`[data-category="${category.id}"]`).isVisible(), count > 0);
+      assert.equal(
+        await page.locator(`[data-category-count="${category.id}"]`).textContent(),
+        `${count} of ${total}`,
+      );
+    }
+    assert.equal(
+      await page.locator("#visible-count").textContent(),
+      `${expected.length} of ${report.cases.length}`,
+    );
+    assert.equal(await page.locator("#empty-row").isVisible(), expected.length === 0);
+  };
 
   for (const [name, width, height] of [
     ["desktop", 1440, 1000],
     ["mobile", 390, 844],
   ]) {
+    const staticPage = await browser.newPage({
+      viewport: { width, height },
+      javaScriptEnabled: false,
+    });
+    await staticPage.goto(pathToFileURL(join(outputDirectory, "index.html")).href);
+    assert.equal(await staticPage.getByRole("combobox", { name: "Filter categories" }).count(), 1);
+    assert.equal(
+      await staticPage.getByRole("combobox", { name: "Filter categories" }).inputValue(),
+      "all",
+    );
+    await assertVisible(staticPage, differences);
+    await staticPage.close();
     const page = await browser.newPage({ viewport: { width, height } });
     const errors = [];
     const networkRequests = [];
@@ -39,6 +73,14 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
     await page.goto(pathToFileURL(join(outputDirectory, "index.html")).href);
     await page.getByRole("heading", { name: "Compiler compatibility" }).waitFor();
     assert.equal(await page.locator("[data-case]").count(), report.cases.length);
+    const categoryFilter = page.getByRole("combobox", {
+      name: "Filter categories",
+    });
+    assert.deepEqual(await categoryFilter.locator("option").allTextContents(), [
+      "All categories",
+      ...report.categories.map((category) => category.label),
+    ]);
+    await assertVisible(page, differences);
     assert.equal(
       await page.getByRole("combobox", { name: "Filter outcomes" }).inputValue(),
       "differences",
@@ -121,7 +163,7 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
       "module-suppression-no-opt-out",
       "valid-hooks-redundant-suppression",
       "invalid-hooks-with-suppression",
-      "invalid-hooks-no-suppression",
+      "invalid-hooks-with-suppression-control",
     ];
     assert.deepEqual(
       await finding
@@ -145,6 +187,50 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
       fullPage: true,
     });
 
+    for (const category of report.categories) {
+      await categoryFilter.selectOption(category.id);
+      assert.equal(await categoryFilter.inputValue(), category.id);
+      for (const mode of ["all", "differences", "bailouts", "controls"]) {
+        await page.getByRole("combobox", { name: "Filter outcomes" }).selectOption(mode);
+        const candidates =
+          mode === "differences"
+            ? differences
+            : mode === "bailouts"
+              ? diagnosticFixtures
+              : report.cases;
+        await assertVisible(
+          page,
+          candidates.filter(
+            (fixture) =>
+              fixture.category === category.id && (mode !== "controls" || !fixture.control),
+          ),
+        );
+      }
+    }
+    await categoryFilter.selectOption("all");
+    await page.getByRole("combobox", { name: "Filter outcomes" }).selectOption("all");
+    await assertVisible(page, report.cases);
+    await page.screenshot({
+      path: join(directory, "results", `report-groups-${name}.png`),
+      fullPage: true,
+    });
+    await page.getByRole("searchbox", { name: "Search fixtures" }).fill("Syntax support");
+    await assertVisible(
+      page,
+      report.cases.filter((fixture) => fixture.category === "syntax-support"),
+    );
+    await categoryFilter.selectOption("syntax-support");
+    await page
+      .getByRole("searchbox", { name: "Search fixtures" })
+      .fill("captured-update-expression");
+    await assertVisible(
+      page,
+      report.cases.filter((fixture) => fixture.id.startsWith("captured-update-expression")),
+    );
+    await page.getByRole("searchbox", { name: "Search fixtures" }).fill("no-such-fixture");
+    await assertVisible(page, []);
+    await page.getByRole("searchbox", { name: "Search fixtures" }).fill("");
+    await categoryFilter.selectOption("all");
     await page.getByRole("combobox", { name: "Filter outcomes" }).selectOption("bailouts");
     assert.deepEqual(
       await page
@@ -202,7 +288,7 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
     }
     await page.getByRole("button", { name: "computed-template-key", exact: true }).click();
     await page.getByRole("link", { name: "Control", exact: true }).click();
-    assert.equal(await page.locator("#case-title").textContent(), "computed-member-key-control");
+    assert.equal(await page.locator("#case-title").textContent(), "computed-template-key-control");
     await page.getByRole("tab", { name: "Compiler output", exact: true }).click();
     assert.ok((await page.locator("#left-code").textContent()).includes("react/compiler-runtime"));
     const source = await page
@@ -210,17 +296,51 @@ test("public HTML works offline with desktop/mobile filters, evidence tabs, and 
       .getAttribute("href");
     assert.ok(existsSync(join(outputDirectory, source)));
     for (const id of evidenceIds) {
+      await categoryFilter.selectOption("syntax-support");
       await page.getByRole("combobox", { name: "Filter outcomes" }).selectOption("differences");
       await page.getByRole("searchbox", { name: "Search fixtures" }).fill("no-such-fixture");
       await finding.locator(`[data-evidence-case="${id}"]`).click();
       assert.equal(await page.locator("#case-title").textContent(), id);
       assert.equal(await page.locator(`[data-row="${id}"]`).isVisible(), true);
+      assert.equal(await categoryFilter.inputValue(), "all");
       assert.equal(await page.getByRole("searchbox", { name: "Search fixtures" }).inputValue(), "");
       assert.equal(
         await page.getByRole("combobox", { name: "Compare compilers" }).inputValue(),
         "babel-oxc",
       );
       assert.equal(new URL(page.url()).hash, `#${id}`);
+    }
+    const repro = differences.find((fixture) => fixture.control);
+    await page.getByRole("button", { name: repro.id, exact: true }).click();
+    await categoryFilter.selectOption("guards");
+    await page.getByRole("combobox", { name: "Filter outcomes" }).selectOption("differences");
+    await page.getByRole("searchbox", { name: "Search fixtures" }).fill("no-such-fixture");
+    await page.getByRole("link", { name: "Control", exact: true }).click();
+    assert.equal(await page.locator("#case-title").textContent(), repro.control);
+    assert.equal(await categoryFilter.inputValue(), "all");
+    assert.equal(await page.locator(`[data-row="${repro.control}"]`).isVisible(), true);
+    await categoryFilter.selectOption("guards");
+    await page.evaluate(() => {
+      location.hash = "inline-component";
+    });
+    await page.waitForFunction(
+      () => document.getElementById("case-title").textContent === "inline-component",
+    );
+    assert.equal(await page.locator("#case-group").textContent(), "Components & scope");
+    assert.equal(await page.locator('[data-row="inline-component"]').isVisible(), true);
+    assert.equal(
+      await page.locator("#case-title").evaluate((heading) => heading === document.activeElement),
+      true,
+    );
+    for (const [previous, current] of Object.entries(report.caseAliases)) {
+      await page.goto(`${pathToFileURL(join(outputDirectory, "index.html")).href}#${previous}`);
+      assert.equal(await page.locator("#case-title").textContent(), current);
+      assert.equal(new URL(page.url()).hash, `#${current}`);
+      assert.equal(await page.locator(`[data-row="${current}"]`).isVisible(), true);
+      assert.equal(
+        await page.locator("#source-link").getAttribute("href"),
+        `${current}.source.tsx`,
+      );
     }
     assert.equal(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
